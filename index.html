@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SacaMedi — Protocolo Demo/Cierre</title>
+<title>SacaMedi — Protocolo Demo/Cierre v2</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
@@ -17,7 +17,6 @@
     --purple-300: #b49aff;
     --purple-200: #d4c4ff;
     --purple-100: #ede5ff;
-    --purple-50: #f7f3ff;
     --bg: #0d0a1a;
     --bg-card: #151025;
     --bg-card-hover: #1c1433;
@@ -45,1988 +44,486 @@
     display: flex;
   }
 
-  /* SIDEBAR */
+  /* ===== SIDEBAR ===== */
   .sidebar {
-    width: 280px;
-    min-width: 280px;
-    background: var(--bg-card);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
+    width: 260px; min-width: 260px;
+    background: var(--bg-card); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; height: 100vh;
   }
-
   .sidebar-logo {
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
   }
-
   .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 34px; height: 34px;
     background: linear-gradient(135deg, var(--purple-500), var(--purple-300));
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 14px;
-    color: #fff;
+    border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; color: #fff;
   }
-
   .logo-text {
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
+    font-size: 17px; font-weight: 700; letter-spacing: -0.5px;
     background: linear-gradient(135deg, var(--purple-300), var(--purple-500));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
+  .logo-sub { font-size: 10px; color: var(--text-muted); font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
 
-  .logo-version {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-weight: 500;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-
-  .sidebar-nav {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 0;
-  }
-
-  .sidebar-nav::-webkit-scrollbar { width: 4px; }
-  .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-  .sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .sidebar-nav::-webkit-scrollbar { width: 3px; }
+  .sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
   .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
-    cursor: pointer;
-    transition: all 0.2s;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 18px; cursor: pointer; transition: all 0.15s;
     border-left: 3px solid transparent;
-    position: relative;
   }
-
   .nav-item:hover { background: var(--bg-card-hover); }
-
-  .nav-item.active {
-    background: rgba(124, 77, 255, 0.08);
-    border-left-color: var(--purple-500);
-  }
-
+  .nav-item.active { background: rgba(124,77,255,0.08); border-left-color: var(--purple-500); }
   .nav-item.active .nav-label { color: var(--purple-300); font-weight: 600; }
-
-  .nav-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    flex-shrink: 0;
-    transition: all 0.3s;
-  }
-
-  .nav-item.active .nav-dot { background: var(--purple-500); box-shadow: 0 0 8px var(--purple-500); }
   .nav-item.completed .nav-dot { background: var(--green); }
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; transition: all 0.3s; }
+  .nav-item.active .nav-dot { background: var(--purple-500); box-shadow: 0 0 6px var(--purple-500); }
+  .nav-label { font-size: 12px; color: var(--text-dim); line-height: 1.3; flex: 1; }
+  .nav-time { font-size: 10px; color: var(--text-muted); font-weight: 500; flex-shrink: 0; }
 
-  .nav-label {
-    font-size: 13px;
-    color: var(--text-dim);
-    font-weight: 400;
-    line-height: 1.3;
-    flex: 1;
-  }
-
-  .nav-time {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-family: 'Inter', monospace;
-    font-weight: 500;
-    flex-shrink: 0;
-  }
-
-  /* GLOBAL TIMER BAR */
-  .global-timer-bar {
-    padding: 16px 20px;
-    border-top: 1px solid var(--border);
-    background: var(--purple-900);
-  }
-
-  .timer-display {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-  }
-
-  .timer-clock {
-    font-size: 28px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -1px;
-  }
-
-  .timer-controls {
-    display: flex;
-    gap: 6px;
-  }
-
+  .global-timer-bar { padding: 14px 18px; border-top: 1px solid var(--border); background: var(--purple-900); }
+  .timer-display { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .timer-clock { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  .timer-controls { display: flex; gap: 5px; }
   .timer-btn {
-    width: 34px;
-    height: 34px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    color: var(--text);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    transition: all 0.2s;
+    width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; transition: all 0.15s;
   }
-
   .timer-btn:hover { background: var(--purple-600); border-color: var(--purple-500); }
+  .timer-progress { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .timer-progress-fill { height: 100%; border-radius: 2px; transition: width 1s linear, background 0.5s; width: 0%; background: var(--green); }
 
-  .timer-progress {
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .timer-progress-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 1s linear, background 0.5s;
-    width: 0%;
-    background: var(--green);
-  }
-
-  /* MAIN CONTENT */
-  .main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  /* ===== MAIN ===== */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
   .main-header {
-    padding: 16px 32px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--bg-card);
-    flex-shrink: 0;
+    padding: 12px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-card); flex-shrink: 0;
   }
-
-  .stage-title-area {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .stage-number {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--purple-400);
-    background: rgba(124, 77, 255, 0.12);
-    padding: 4px 10px;
-    border-radius: 6px;
-    letter-spacing: 1px;
-  }
-
-  .stage-title {
-    font-size: 20px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-  }
-
-  .stage-objective {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-
-  .stage-timer-badge {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 16px;
-    border-radius: 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-  }
-
-  .stage-timer-indicator {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--green);
-    transition: background 0.5s;
-  }
-
+  .stage-title-area { display: flex; align-items: center; gap: 14px; }
+  .stage-number { font-size: 11px; font-weight: 700; color: var(--purple-400); background: rgba(124,77,255,0.12); padding: 3px 9px; border-radius: 5px; letter-spacing: 1px; }
+  .stage-title { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+  .stage-objective { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .stage-timer-badge { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+  .stage-timer-indicator { width: 9px; height: 9px; border-radius: 50%; background: var(--green); transition: all 0.5s; }
   .stage-timer-indicator.yellow { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
   .stage-timer-indicator.red { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse-red 1s infinite; }
+  @keyframes pulse-red { 0%,100%{opacity:1}50%{opacity:0.5} }
+  .stage-timer-text { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stage-timer-limit { font-size: 11px; color: var(--text-muted); }
+  .time-alert { display: none; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; animation: blink 0.8s infinite; }
+  .time-alert.warn { display: inline-block; background: var(--yellow-dim); color: var(--yellow); }
+  .time-alert.over { display: inline-block; background: var(--red-dim); color: var(--red); }
+  @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.4} }
 
-  @keyframes pulse-red {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
+  /* Golden rules - persistent */
+  .rules-strip { display: flex; gap: 6px; padding: 8px 24px; border-bottom: 1px solid var(--border); background: rgba(124,77,255,0.03); flex-shrink: 0; flex-wrap: wrap; }
+  .rule-chip { padding: 4px 12px; border-radius: 16px; font-size: 10px; font-weight: 600; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: default; position: relative; white-space: nowrap; }
+  .rule-chip:hover { border-color: var(--purple-500); color: var(--purple-300); }
+  .rule-tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--purple-800); border: 1px solid var(--purple-600); border-radius: 7px; padding: 8px 12px; font-size: 11px; font-weight: 400; color: var(--text); min-width: 200px; white-space: normal; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,0.4); line-height: 1.4; }
+  .rule-chip:hover .rule-tip { display: block; }
 
-  .stage-timer-text {
-    font-size: 18px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .stage-timer-limit {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  /* CONTENT AREA */
-  .content-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px 32px;
-  }
-
-  .content-area::-webkit-scrollbar { width: 6px; }
-  .content-area::-webkit-scrollbar-track { background: transparent; }
+  /* Split layout */
+  .content-split { flex: 1; display: flex; overflow: hidden; }
+  .content-area { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  .content-area::-webkit-scrollbar { width: 5px; }
   .content-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-  /* EXPANDABLE SCRIPTS */
-  .script-block {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 12px;
-    overflow: hidden;
-    transition: all 0.2s;
-  }
+  /* Notes sidebar */
+  .notes-sidebar { width: 340px; min-width: 340px; border-left: 1px solid var(--border); background: var(--bg-card); display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s, min-width 0.3s; }
+  .notes-sidebar.collapsed { width: 0; min-width: 0; border-left: none; }
+  .notes-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .notes-header h3 { font-size: 14px; font-weight: 700; }
+  .notes-toggle-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: 14px; cursor: pointer; padding: 2px 8px; transition: all 0.15s; }
+  .notes-toggle-btn:hover { border-color: var(--purple-500); color: var(--purple-300); }
+  .notes-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .notes-body::-webkit-scrollbar { width: 3px; }
+  .notes-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .note-group { margin-bottom: 16px; }
+  .note-group-title { font-size: 10px; font-weight: 700; color: var(--purple-400); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .note-field { margin-bottom: 8px; }
+  .note-field label { font-size: 11px; color: var(--text-dim); display: block; margin-bottom: 3px; font-weight: 500; }
+  .note-field input, .note-field textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s; }
+  .note-field input:focus, .note-field textarea:focus { border-color: var(--purple-500); }
+  .note-field textarea { resize: vertical; min-height: 48px; }
+  .note-field input[type="number"] { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .calc-result { background: rgba(124,77,255,0.06); border: 1px solid var(--purple-600); border-radius: 9px; padding: 12px 14px; margin-bottom: 8px; }
+  .calc-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+  .calc-label { font-size: 11px; color: var(--text-dim); }
+  .calc-value { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .calc-value.negative { color: var(--red); }
+  .calc-value.big { font-size: 18px; color: var(--red); }
+  .calc-divider { border-top: 1px solid var(--border); margin: 4px 0; }
 
+  /* SOS */
+  .sos-btn { position: fixed; bottom: 16px; right: 16px; padding: 10px 18px; border-radius: 12px; background: var(--red); border: none; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; z-index: 100; box-shadow: 0 4px 16px rgba(255,82,82,0.4); display: flex; align-items: center; gap: 6px; transition: transform 0.15s; letter-spacing: 0.5px; }
+  .sos-btn:hover { transform: scale(1.05); }
+  .sos-panel { position: fixed; bottom: 60px; right: 16px; width: 420px; max-height: 70vh; background: var(--bg-card); border: 1px solid var(--red-dim); border-radius: 14px; z-index: 99; display: none; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  .sos-panel.open { display: flex; animation: fadeUp 0.2s; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
+  .sos-panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .sos-panel-header h3 { font-size: 14px; font-weight: 700; color: var(--red); }
+  .sos-close { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; }
+  .sos-panel-body { overflow-y: auto; padding: 14px 18px; flex: 1; }
+  .sos-panel-body::-webkit-scrollbar { width: 3px; }
+  .sos-panel-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* Shared components */
+  .script-block { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; transition: all 0.15s; }
   .script-block:hover { border-color: var(--purple-600); }
-
-  .script-header {
-    padding: 14px 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    user-select: none;
-  }
-
-  .script-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .script-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    flex-shrink: 0;
-  }
-
-  .script-icon.talk { background: rgba(124, 77, 255, 0.15); color: var(--purple-400); }
-  .script-icon.branch { background: rgba(255, 171, 0, 0.15); color: var(--yellow); }
-  .script-icon.note { background: rgba(0, 230, 118, 0.15); color: var(--green); }
-  .script-icon.warn { background: rgba(255, 82, 82, 0.15); color: var(--red); }
-  .script-icon.check { background: rgba(0, 230, 118, 0.15); color: var(--green); }
-
-  .script-title {
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  .script-subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 1px;
-  }
-
-  .script-chevron {
-    font-size: 14px;
-    color: var(--text-muted);
-    transition: transform 0.3s;
-    flex-shrink: 0;
-  }
-
+  .script-header { padding: 12px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+  .script-header-left { display: flex; align-items: center; gap: 10px; }
+  .script-icon { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .script-icon.talk { background: rgba(124,77,255,0.15); color: var(--purple-400); }
+  .script-icon.branch { background: rgba(255,171,0,0.15); color: var(--yellow); }
+  .script-icon.note { background: rgba(0,230,118,0.15); color: var(--green); }
+  .script-icon.warn { background: rgba(255,82,82,0.15); color: var(--red); }
+  .script-icon.check { background: rgba(0,230,118,0.15); color: var(--green); }
+  .script-title { font-size: 13px; font-weight: 600; }
+  .script-subtitle { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  .script-chevron { font-size: 12px; color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
   .script-block.open .script-chevron { transform: rotate(180deg); }
+  .script-body { display: none; padding: 0 16px 14px; border-top: 1px solid var(--border); }
+  .script-block.open .script-body { display: block; padding-top: 14px; }
+  .script-text { font-size: 14px; line-height: 1.7; color: var(--text); background: rgba(124,77,255,0.05); border-left: 3px solid var(--purple-500); padding: 10px 14px; border-radius: 0 7px 7px 0; margin-bottom: 8px; }
+  .script-text .var { color: var(--yellow); font-weight: 600; font-style: normal; }
+  .script-note { font-size: 11px; color: var(--text-muted); background: rgba(255,171,0,0.05); border-left: 3px solid var(--yellow); padding: 6px 10px; border-radius: 0 5px 5px 0; margin-top: 6px; font-style: italic; }
+  .script-instruction { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; line-height: 1.5; }
 
-  .script-body {
-    display: none;
-    padding: 0 20px 16px;
-    border-top: 1px solid var(--border);
-  }
-
-  .script-block.open .script-body { display: block; padding-top: 16px; }
-
-  .script-text {
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--text);
-    background: rgba(124, 77, 255, 0.05);
-    border-left: 3px solid var(--purple-500);
-    padding: 12px 16px;
-    border-radius: 0 8px 8px 0;
-    margin-bottom: 10px;
-    font-style: italic;
-  }
-
-  .script-note {
-    font-size: 12px;
-    color: var(--text-muted);
-    background: rgba(255, 171, 0, 0.06);
-    border-left: 3px solid var(--yellow);
-    padding: 8px 12px;
-    border-radius: 0 6px 6px 0;
-    margin-top: 8px;
-    font-style: italic;
-  }
-
-  .script-instruction {
-    font-size: 13px;
-    color: var(--text-dim);
-    margin-bottom: 8px;
-    line-height: 1.5;
-  }
-
-  /* CHECKLIST */
-  .checklist {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 12px 0;
-  }
-
-  .checklist-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
+  .checklist { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+  .checklist-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.15s; }
   .checklist-item:hover { border-color: var(--purple-600); }
-
-  .checklist-item.checked {
-    border-color: var(--green);
-    background: rgba(0, 230, 118, 0.05);
-  }
-
-  .checklist-box {
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    border: 2px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: all 0.2s;
-    font-size: 12px;
-    color: transparent;
-  }
-
-  .checklist-item.checked .checklist-box {
-    background: var(--green);
-    border-color: var(--green);
-    color: var(--bg);
-  }
-
-  .checklist-label {
-    font-size: 14px;
-    font-weight: 500;
-    flex: 1;
-  }
-
+  .checklist-item.checked { border-color: var(--green); background: rgba(0,230,118,0.04); }
+  .checklist-box { width: 20px; height: 20px; border-radius: 5px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; font-size: 11px; color: transparent; }
+  .checklist-item.checked .checklist-box { background: var(--green); border-color: var(--green); color: var(--bg); }
+  .checklist-label { font-size: 13px; font-weight: 500; flex: 1; }
   .checklist-item.checked .checklist-label { text-decoration: line-through; color: var(--text-muted); }
 
-  /* DECISION TREE */
-  .decision-tree {
-    margin: 16px 0;
-  }
+  .dt-question { background: var(--bg-card); border: 1px solid var(--purple-600); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; text-align: center; font-weight: 600; font-size: 14px; }
+  .dt-options { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .dt-option { flex: 1; min-width: 140px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; text-align: center; font-size: 12px; font-weight: 500; transition: all 0.15s; }
+  .dt-option:hover { border-color: var(--purple-500); background: rgba(124,77,255,0.08); }
+  .dt-option.selected { border-color: var(--purple-500); background: rgba(124,77,255,0.15); color: var(--purple-300); }
+  .dt-result { display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
+  .dt-result.visible { display: block; animation: fadeUp 0.2s; }
+  .dt-back { display: inline-flex; align-items: center; gap: 5px; color: var(--purple-400); cursor: pointer; font-size: 12px; font-weight: 500; margin-top: 10px; padding: 5px 10px; border-radius: 5px; transition: background 0.15s; }
+  .dt-back:hover { background: rgba(124,77,255,0.1); }
 
-  .dt-question {
-    background: var(--bg-card);
-    border: 1px solid var(--purple-600);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-    text-align: center;
-    font-weight: 600;
-    font-size: 15px;
-  }
+  .data-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  .data-table th { text-align: left; padding: 8px 12px; background: rgba(124,77,255,0.08); color: var(--purple-300); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); }
 
-  .dt-options {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-
-  .dt-option {
-    flex: 1;
-    padding: 12px 16px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-
-  .dt-option:hover { border-color: var(--purple-500); background: rgba(124, 77, 255, 0.08); }
-  .dt-option.selected { border-color: var(--purple-500); background: rgba(124, 77, 255, 0.15); color: var(--purple-300); }
-
-  .dt-result {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px 20px;
-    display: none;
-  }
-
-  .dt-result.visible { display: block; animation: fadeIn 0.3s; }
-
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-  .dt-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--purple-400);
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    margin-top: 12px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    transition: background 0.2s;
-  }
-
-  .dt-back:hover { background: rgba(124, 77, 255, 0.1); }
-
-  /* NOTES PANEL */
-  .notes-toggle {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--purple-600), var(--purple-500));
-    border: none;
-    color: #fff;
-    font-size: 20px;
-    cursor: pointer;
-    box-shadow: 0 4px 20px rgba(124, 77, 255, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    transition: transform 0.2s;
-  }
-
-  .notes-toggle:hover { transform: scale(1.05); }
-
-  .notes-panel {
-    position: fixed;
-    right: -420px;
-    top: 0;
-    width: 420px;
-    height: 100vh;
-    background: var(--bg-card);
-    border-left: 1px solid var(--border);
-    z-index: 99;
-    display: flex;
-    flex-direction: column;
-    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: -10px 0 40px rgba(0, 0, 0, 0.3);
-  }
-
-  .notes-panel.open { right: 0; }
-
-  .notes-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .notes-header h3 {
-    font-size: 16px;
-    font-weight: 700;
-  }
-
-  .notes-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 4px;
-  }
-
-  .notes-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 24px;
-  }
-
-  .notes-content::-webkit-scrollbar { width: 4px; }
-  .notes-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-  .note-group {
-    margin-bottom: 20px;
-  }
-
-  .note-group-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--purple-400);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-
-  .note-field {
-    margin-bottom: 10px;
-  }
-
-  .note-field label {
-    font-size: 12px;
-    color: var(--text-dim);
-    display: block;
-    margin-bottom: 4px;
-    font-weight: 500;
-  }
-
-  .note-field input, .note-field textarea {
-    width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    color: var(--text);
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-
-  .note-field input:focus, .note-field textarea:focus { border-color: var(--purple-500); }
-
-  .note-field textarea { resize: vertical; min-height: 60px; }
-
-  .note-field input[type="number"] {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-  }
-
-  .calc-result {
-    background: rgba(124, 77, 255, 0.08);
-    border: 1px solid var(--purple-600);
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-  }
-
-  .calc-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 4px 0;
-  }
-
-  .calc-label {
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .calc-value {
-    font-size: 14px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .calc-value.negative { color: var(--red); }
-  .calc-value.positive { color: var(--green); }
-
-  .calc-divider {
-    border-top: 1px solid var(--border);
-    margin: 6px 0;
-  }
-
-  .calc-value.big {
-    font-size: 20px;
-    color: var(--red);
-  }
-
-  /* GOLDEN RULES BAR */
-  .rules-banner {
-    display: flex;
-    gap: 8px;
-    padding: 12px 0;
-    margin-bottom: 16px;
-    overflow-x: auto;
-    flex-wrap: wrap;
-  }
-
-  .rule-chip {
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    color: var(--text-dim);
-    white-space: nowrap;
-    cursor: default;
-    position: relative;
-  }
-
-  .rule-chip:hover { border-color: var(--purple-500); color: var(--purple-300); }
-
-  .rule-chip .rule-tooltip {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--purple-800);
-    border: 1px solid var(--purple-600);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--text);
-    min-width: 220px;
-    white-space: normal;
-    z-index: 50;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    line-height: 1.5;
-  }
-
-  .rule-chip:hover .rule-tooltip { display: block; }
-
-  /* TABLE STYLES */
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 13px;
-  }
-
-  .data-table th {
-    text-align: left;
-    padding: 10px 14px;
-    background: rgba(124, 77, 255, 0.08);
-    color: var(--purple-300);
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .data-table td {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-dim);
-  }
-
-  .data-table tr:hover td { background: rgba(124, 77, 255, 0.03); }
-
-  /* BOTTLENECK CARDS */
-  .bottleneck-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
-    margin: 12px 0;
-  }
-
-  .bottleneck-card {
-    padding: 14px 16px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
+  .bottleneck-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0; }
+  .bottleneck-card { padding: 12px 14px; background: var(--bg-card); border: 2px solid var(--border); border-radius: 9px; cursor: pointer; transition: all 0.15s; }
   .bottleneck-card:hover { border-color: var(--purple-500); }
-  .bottleneck-card.selected { border-color: var(--red); background: rgba(255, 82, 82, 0.06); }
+  .bottleneck-card.selected { border-color: var(--red); background: rgba(255,82,82,0.06); }
+  .bottleneck-tag { font-size: 9px; font-weight: 700; color: var(--red); letter-spacing: 0.5px; margin-bottom: 3px; }
+  .bottleneck-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .bottleneck-threshold { font-size: 10px; color: var(--text-muted); }
 
-  .bottleneck-tag {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--red);
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-  }
-
-  .bottleneck-name {
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 2px;
-  }
-
-  .bottleneck-threshold {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  /* PILLAR CARDS */
-  .pillar-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 10px;
-    transition: all 0.2s;
-  }
-
+  .pillar-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 8px; transition: all 0.15s; display: flex; gap: 14px; align-items: flex-start; }
   .pillar-card:hover { border-color: var(--purple-500); }
+  .pillar-card.confirmed { border-color: var(--green); background: rgba(0,230,118,0.03); }
+  .pillar-check { width: 24px; height: 24px; border-radius: 6px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; font-size: 12px; color: transparent; transition: all 0.15s; margin-top: 2px; }
+  .pillar-card.confirmed .pillar-check { background: var(--green); border-color: var(--green); color: var(--bg); }
+  .pillar-content { flex: 1; }
+  .pillar-number { font-size: 10px; font-weight: 700; color: var(--purple-500); margin-bottom: 3px; }
+  .pillar-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .pillar-desc { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 6px; }
+  .pillar-cfa { font-size: 12px; font-weight: 600; color: var(--purple-300); }
 
-  .pillar-number {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--purple-500);
-    margin-bottom: 4px;
-  }
+  .deposit-ladder { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+  .deposit-step { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); }
+  .deposit-step-num { font-size: 10px; font-weight: 700; color: var(--purple-400); background: rgba(124,77,255,0.12); width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+  .deposit-amount { font-size: 15px; font-weight: 700; min-width: 70px; }
+  .deposit-script { font-size: 12px; color: var(--text-dim); font-style: italic; }
 
-  .pillar-name {
-    font-size: 15px;
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
-  .pillar-desc {
-    font-size: 13px;
-    color: var(--text-dim);
-    line-height: 1.6;
-    font-style: italic;
-    margin-bottom: 8px;
-  }
-
-  .pillar-cfa {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--purple-300);
-  }
-
-  /* DEPOSIT LADDER */
-  .deposit-ladder {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 12px 0;
-  }
-
-  .deposit-step {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-radius: 10px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-  }
-
-  .deposit-step-num {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--purple-400);
-    background: rgba(124, 77, 255, 0.12);
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .deposit-amount {
-    font-size: 16px;
-    font-weight: 700;
-    min-width: 80px;
-  }
-
-  .deposit-script {
-    font-size: 13px;
-    color: var(--text-dim);
-    font-style: italic;
-  }
-
-  /* RESISTANCE TABLE */
-  .resistance-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin: 12px 0;
-  }
-
-  .resistance-card {
-    padding: 14px 16px;
-    border-radius: 10px;
-    border: 1px solid;
-  }
-
-  .resistance-card.green-level { border-color: var(--green-dim); background: rgba(0, 230, 118, 0.04); }
-  .resistance-card.yellow-level { border-color: var(--yellow-dim); background: rgba(255, 171, 0, 0.04); }
-  .resistance-card.red-level { border-color: var(--red-dim); background: rgba(255, 82, 82, 0.04); }
-
-  .resistance-label {
-    font-size: 12px;
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
+  .resistance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .resistance-card { padding: 12px 14px; border-radius: 8px; border: 1px solid; }
+  .resistance-card.green-level { border-color: var(--green-dim); background: rgba(0,230,118,0.03); }
+  .resistance-card.yellow-level { border-color: var(--yellow-dim); background: rgba(255,171,0,0.03); }
+  .resistance-card.red-level { border-color: var(--red-dim); background: rgba(255,82,82,0.03); }
+  .resistance-label { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
   .resistance-card.green-level .resistance-label { color: var(--green); }
   .resistance-card.yellow-level .resistance-label { color: var(--yellow); }
   .resistance-card.red-level .resistance-label { color: var(--red); }
+  .resistance-signal, .resistance-action { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+  .resistance-action { margin-top: 4px; font-weight: 500; color: var(--text); }
 
-  .resistance-signal, .resistance-action {
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
-
-  .resistance-action { margin-top: 6px; font-weight: 500; color: var(--text); }
-
-  /* FOLLOW UP PIPELINE */
-  .pipeline-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin: 12px 0;
-  }
-
-  .pipeline-card {
-    padding: 14px 16px;
-    border-radius: 10px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-  }
-
-  .pipeline-tag {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-  }
-
+  .pipeline-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .pipeline-card { padding: 12px 14px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); }
+  .pipeline-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
   .pipeline-card:nth-child(1) .pipeline-tag { color: var(--red); }
   .pipeline-card:nth-child(2) .pipeline-tag { color: var(--yellow); }
   .pipeline-card:nth-child(3) .pipeline-tag { color: var(--text-muted); }
+  .pipeline-desc { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+  .pipeline-freq { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
 
-  .pipeline-desc {
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
+  .emergency-block { background: rgba(255,82,82,0.03); border: 1px solid var(--red-dim); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
+  .emergency-title { font-size: 12px; font-weight: 700; color: var(--red); margin-bottom: 6px; }
 
-  .pipeline-freq {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 6px;
-    font-weight: 500;
-  }
+  .sub-nav { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+  .sub-nav-btn { padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim); cursor: pointer; transition: all 0.15s; }
+  .sub-nav-btn:hover, .sub-nav-btn.active { border-color: var(--purple-500); color: var(--purple-300); background: rgba(124,77,255,0.08); }
 
-  /* SECTION DIVIDER */
-  .section-divider {
-    border-top: 1px solid var(--border);
-    margin: 20px 0;
-  }
-
-  .section-label {
-    font-size: 15px;
-    font-weight: 700;
-    margin-bottom: 12px;
-    color: var(--text);
-  }
-
-  .section-sublabel {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: -8px;
-    margin-bottom: 12px;
-  }
-
-  /* EMERGENCY NOTES */
-  .emergency-block {
-    background: rgba(255, 82, 82, 0.04);
-    border: 1px solid var(--red-dim);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-  }
-
-  .emergency-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--red);
-    margin-bottom: 8px;
-  }
-
-  /* RESPONSIVE */
-  @media (max-width: 900px) {
-    .sidebar { width: 60px; min-width: 60px; }
-    .sidebar-logo { padding: 16px; justify-content: center; }
-    .logo-text, .logo-version, .nav-label, .nav-time { display: none; }
-    .nav-item { padding: 12px 0; justify-content: center; }
-    .notes-panel { width: 100vw; right: -100vw; }
-    .content-area { padding: 16px; }
-    .main-header { padding: 12px 16px; flex-direction: column; gap: 10px; }
-  }
-
-  /* Stage transition */
-  .stage-content { animation: fadeIn 0.3s; }
+  .section-divider { border-top: 1px solid var(--border); margin: 16px 0; }
+  .section-label { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+  .section-sublabel { font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 10px; }
+  .stage-content { animation: fadeUp 0.25s; }
 </style>
 </head>
 <body>
 
-<!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-icon">SM</div>
-    <div>
-      <div class="logo-text">SacaMedi</div>
-      <div class="logo-version">Protocolo v5.0</div>
-    </div>
+    <div><div class="logo-text">SacaMedi</div><div class="logo-sub">Protocolo v5.0</div></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
   <div class="global-timer-bar">
     <div class="timer-display">
       <div class="timer-clock" id="globalClock">00:00</div>
       <div class="timer-controls">
-        <button class="timer-btn" id="btnPlay" onclick="toggleTimer()" title="Iniciar/Pausar">&#9654;</button>
-        <button class="timer-btn" onclick="resetTimer()" title="Reiniciar">&#8634;</button>
+        <button class="timer-btn" id="btnPlay" onclick="toggleTimer()">&#9654;</button>
+        <button class="timer-btn" onclick="resetTimer()">&#8634;</button>
       </div>
     </div>
-    <div class="timer-progress">
-      <div class="timer-progress-fill" id="globalProgress"></div>
-    </div>
+    <div class="timer-progress"><div class="timer-progress-fill" id="globalProgress"></div></div>
   </div>
 </aside>
 
-<!-- MAIN -->
 <div class="main">
   <header class="main-header">
     <div class="stage-title-area">
-      <span class="stage-number" id="stageNumber">ETAPA 1</span>
-      <div>
-        <div class="stage-title" id="stageTitle">Apertura, Frame y Contexto</div>
-        <div class="stage-objective" id="stageObjective"></div>
-      </div>
+      <span class="stage-number" id="stageNumber">2.1</span>
+      <div><div class="stage-title" id="stageTitle">Apertura</div><div class="stage-objective" id="stageObjective"></div></div>
     </div>
-    <div class="stage-timer-badge">
-      <div class="stage-timer-indicator" id="stageIndicator"></div>
-      <div class="stage-timer-text" id="stageClock">0:00</div>
-      <div class="stage-timer-limit" id="stageLimit">/ 5:00</div>
+    <div class="header-right">
+      <span class="time-alert" id="timeAlert"></span>
+      <div class="stage-timer-badge">
+        <div class="stage-timer-indicator" id="stageIndicator"></div>
+        <div class="stage-timer-text" id="stageClock">0:00</div>
+        <div class="stage-timer-limit" id="stageLimit">/ 5:00</div>
+      </div>
     </div>
   </header>
-  <div class="content-area" id="contentArea"></div>
+
+  <div class="rules-strip">
+    <div class="rule-chip">1. Precio ANTES del Pitch<span class="rule-tip">Filtra curiosos y el pitch justifica la inversión.</span></div>
+    <div class="rule-chip">2. Emoción B2B + Downplay<span class="rule-tip">Minimiza dolor para que amplifiquen.</span></div>
+    <div class="rule-chip">3. Cero Coaching<span class="rule-tip">No des la solución gratis en discovery.</span></div>
+    <div class="rule-chip">4. Lenguaje Neutro<span class="rule-tip">Que se persuada solo. No "firmar"/"cerrar".</span></div>
+    <div class="rule-chip">5. Pre-califica Pago<span class="rule-tip">Quién tiene acceso a tarjeta/cuenta.</span></div>
+  </div>
+
+  <div class="content-split">
+    <div class="content-area" id="contentArea"></div>
+    <div class="notes-sidebar" id="notesSidebar">
+      <div class="notes-header"><h3>Notas en Vivo</h3><button class="notes-toggle-btn" onclick="toggleNotes()">&laquo;</button></div>
+      <div class="notes-body">
+        <div class="note-group">
+          <div class="note-group-title">Prospecto</div>
+          <div class="note-field"><label>Nombre</label><input type="text" id="noteNombre" placeholder="Dr. Juan..." oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Setter</label><input type="text" id="noteSetter" placeholder="Quien refirió" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Decision Maker</label><input type="text" id="noteDM" placeholder="Él / Socio / Esposa" oninput="onNoteChange()"></div>
+        </div>
+        <div class="note-group">
+          <div class="note-group-title">Funnel</div>
+          <div class="note-field"><label>Facturación/mes ($)</label><input type="number" id="noteFacturacion" placeholder="50000" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Ticket promedio ($)</label><input type="number" id="noteTicket" placeholder="3000" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Meta ($)</label><input type="number" id="noteMeta" placeholder="150000" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Leads/mes</label><input type="number" id="noteLeads" placeholder="200" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Agendados</label><input type="number" id="noteAgendados" placeholder="40" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Asisten</label><input type="number" id="noteShow" placeholder="20" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Cierran</label><input type="number" id="noteCierran" placeholder="8" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Ads/mes ($)</label><input type="number" id="noteAds" placeholder="5000" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Horas/semana</label><input type="number" id="noteHoras" placeholder="60" oninput="onNoteChange()"></div>
+        </div>
+        <div class="note-group">
+          <div class="note-group-title">Métricas</div>
+          <div class="calc-result">
+            <div class="calc-row"><span class="calc-label">Agendamiento</span><span class="calc-value" id="calcAgendamiento">--</span></div>
+            <div class="calc-row"><span class="calc-label">Show Rate</span><span class="calc-value" id="calcShowRate">--</span></div>
+            <div class="calc-row"><span class="calc-label">Tasa cierre</span><span class="calc-value" id="calcCierre">--</span></div>
+            <div class="calc-row"><span class="calc-label">$/lead</span><span class="calc-value" id="calcCPL">--</span></div>
+            <div class="calc-row"><span class="calc-label">$/paciente</span><span class="calc-value" id="calcCPP">--</span></div>
+            <div class="calc-divider"></div>
+            <div class="calc-row"><span class="calc-label">No-shows/mes</span><span class="calc-value negative" id="calcNoShows">--</span></div>
+            <div class="calc-row"><span class="calc-label">Perdidos/mes</span><span class="calc-value negative" id="calcLostMonth">--</span></div>
+            <div class="calc-row"><span class="calc-label">Perdidos 3m</span><span class="calc-value big" id="calcLost3">--</span></div>
+            <div class="calc-divider"></div>
+            <div class="calc-row"><span class="calc-label" style="font-weight:700;color:var(--red)">COI/mes</span><span class="calc-value big" id="calcCOI">--</span></div>
+          </div>
+        </div>
+        <div class="note-group">
+          <div class="note-group-title">Cualitativo</div>
+          <div class="note-field"><label>Estado deseado</label><textarea id="noteVision" placeholder="6-12 meses..." oninput="onNoteChange()"></textarea></div>
+          <div class="note-field"><label>Dolor principal</label><textarea id="noteDolor" placeholder="60h, sin vacaciones..." oninput="onNoteChange()"></textarea></div>
+          <div class="note-field"><label>Intentos pasados</label><textarea id="noteIntentos" placeholder="Agencias, cursos..." oninput="onNoteChange()"></textarea></div>
+          <div class="note-field"><label>Bottleneck</label><input type="text" id="noteBottleneck" oninput="onNoteChange()"></div>
+          <div class="note-field"><label>Meta operativa</label><textarea id="noteMetaOp" placeholder="Contratar, sede..." oninput="onNoteChange()"></textarea></div>
+          <div class="note-field"><label>Objeciones</label><textarea id="noteObjeciones" oninput="onNoteChange()"></textarea></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- NOTES TOGGLE -->
-<button class="notes-toggle" id="notesToggle" onclick="toggleNotes()">&#9998;</button>
-
-<!-- NOTES PANEL -->
-<div class="notes-panel" id="notesPanel">
-  <div class="notes-header">
-    <h3>Notas en Vivo</h3>
-    <button class="notes-close" onclick="toggleNotes()">&times;</button>
-  </div>
-  <div class="notes-content">
-    <div class="note-group">
-      <div class="note-group-title">Datos del Prospecto</div>
-      <div class="note-field">
-        <label>Nombre del prospecto</label>
-        <input type="text" id="noteNombre" placeholder="Dr. Juan..." oninput="saveNotes()">
-      </div>
-      <div class="note-field">
-        <label>Nombre del Setter</label>
-        <input type="text" id="noteSetter" placeholder="Quien refirió..." oninput="saveNotes()">
-      </div>
-      <div class="note-field">
-        <label>Decision Maker</label>
-        <input type="text" id="noteDM" placeholder="Él mismo / Socio / Esposa..." oninput="saveNotes()">
-      </div>
-    </div>
-
-    <div class="note-group">
-      <div class="note-group-title">Números del Funnel</div>
-      <div class="note-field">
-        <label>Facturación mensual ($)</label>
-        <input type="number" id="noteFacturacion" placeholder="50000" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Ticket promedio ($)</label>
-        <input type="number" id="noteTicket" placeholder="3000" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Meta de facturación ($)</label>
-        <input type="number" id="noteMeta" placeholder="150000" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Leads / mes</label>
-        <input type="number" id="noteLeads" placeholder="200" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Agendados / mes</label>
-        <input type="number" id="noteAgendados" placeholder="40" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Asisten (Show)</label>
-        <input type="number" id="noteShow" placeholder="20" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Cierran (compran)</label>
-        <input type="number" id="noteCierran" placeholder="8" oninput="calcMetrics()">
-      </div>
-      <div class="note-field">
-        <label>Inversión en ads / mes ($)</label>
-        <input type="number" id="noteAds" placeholder="5000" oninput="calcMetrics()">
-      </div>
-    </div>
-
-    <div class="note-group">
-      <div class="note-group-title">Métricas Auto-Calculadas</div>
-      <div class="calc-result" id="calcResults">
-        <div class="calc-row">
-          <span class="calc-label">Tasa de agendamiento</span>
-          <span class="calc-value" id="calcAgendamiento">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">Show Rate</span>
-          <span class="calc-value" id="calcShowRate">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">Tasa de cierre</span>
-          <span class="calc-value" id="calcCierre">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">Costo por lead</span>
-          <span class="calc-value" id="calcCPL">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">Costo por paciente</span>
-          <span class="calc-value" id="calcCPP">—</span>
-        </div>
-        <div class="calc-divider"></div>
-        <div class="calc-row">
-          <span class="calc-label">No-shows / mes</span>
-          <span class="calc-value negative" id="calcNoShows">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">$ perdidos por no-shows / mes</span>
-          <span class="calc-value negative" id="calcLostMonth">—</span>
-        </div>
-        <div class="calc-row">
-          <span class="calc-label">$ perdidos en 3 meses</span>
-          <span class="calc-value big" id="calcLost3">—</span>
-        </div>
-        <div class="calc-divider"></div>
-        <div class="calc-row">
-          <span class="calc-label" style="font-weight:700;color:var(--red)">COST OF INACTION / mes</span>
-          <span class="calc-value big" id="calcCOI">—</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="note-group">
-      <div class="note-group-title">Dolor y Visión</div>
-      <div class="note-field">
-        <label>Estado deseado (la zanahoria)</label>
-        <textarea id="noteVision" placeholder="Qué quiere lograr en 6-12 meses..." oninput="saveNotes()"></textarea>
-      </div>
-      <div class="note-field">
-        <label>Dolor principal (la herida)</label>
-        <textarea id="noteDolor" placeholder="Trabaja 60h, no puede irse de vacaciones..." oninput="saveNotes()"></textarea>
-      </div>
-      <div class="note-field">
-        <label>Intentos pasados</label>
-        <textarea id="noteIntentos" placeholder="Agencias anteriores, cursos, etc." oninput="saveNotes()"></textarea>
-      </div>
-      <div class="note-field">
-        <label>Bottleneck identificado</label>
-        <input type="text" id="noteBottleneck" placeholder="Plaga del No-Show, Hemorragia..." oninput="saveNotes()">
-      </div>
-      <div class="note-field">
-        <label>Objeciones encontradas</label>
-        <textarea id="noteObjeciones" placeholder="Lo que dijo en el cierre..." oninput="saveNotes()"></textarea>
-      </div>
-    </div>
-  </div>
+<button class="sos-btn" onclick="toggleSOS()">&#9888; SOS</button>
+<div class="sos-panel" id="sosPanel">
+  <div class="sos-panel-header"><h3>&#9888; Emergencias</h3><button class="sos-close" onclick="toggleSOS()">&times;</button></div>
+  <div class="sos-panel-body" id="sosBody"></div>
 </div>
 
 <script>
-// ========== STAGES DATA ==========
-const STAGES = [
-  {
-    id: 'apertura',
-    num: '2.1',
-    title: 'Apertura, Frame y Contexto de Triage',
-    time: '0:00 - 5:00',
-    duration: 300,
-    objective: 'Establecer autoridad, setear reglas, confirmar tiempo, calificar decision-maker y pre-calificar pago.',
-    content: 'apertura'
-  },
-  {
-    id: 'discovery',
-    num: '2.2',
-    title: 'Discovery Híbrido',
-    time: '5:00 - 20:00',
-    duration: 900,
-    objective: 'Encontrar la herida de negocio + vida personal, sacar números duros.',
-    content: 'discovery'
-  },
-  {
-    id: 'intentos',
-    num: '2.3',
-    title: 'Agotar Intentos Pasados',
-    time: '20:00 - 25:00',
-    duration: 300,
-    objective: 'Desmantelar soluciones anteriores para que tu sistema sea la única opción lógica.',
-    content: 'intentos'
-  },
-  {
-    id: 'bottleneck',
-    num: '2.4',
-    title: 'Diagnóstico + Cost of Inaction',
-    time: '25:00 - 30:00',
-    duration: 300,
-    objective: 'Mostrarle cuánto dinero está perdiendo HOY.',
-    content: 'bottleneck'
-  },
-  {
-    id: 'precio',
-    num: '2.5',
-    title: 'Transición + Anclaje de Precio',
-    time: '30:00 - 32:00',
-    duration: 120,
-    objective: 'Re-abrir herida emocional justo antes de revelar la inversión.',
-    content: 'precio'
-  },
-  {
-    id: 'pitch',
-    num: '2.6',
-    title: 'Pitch de los 5 Pilares',
-    time: '32:00 - 42:00',
-    duration: 600,
-    objective: 'Explicar el sistema validando cada paso con micro-compromisos.',
-    content: 'pitch'
-  },
-  {
-    id: 'tempcheck',
-    num: '2.7',
-    title: 'Temperature Check + Commitment',
-    time: '42:00 - 44:00',
-    duration: 120,
-    objective: 'Medir convicción y hacer que el prospecto se venda a sí mismo.',
-    content: 'tempcheck'
-  },
-  {
-    id: 'cierre',
-    num: '2.8',
-    title: 'Protocolo Robusto de Cierre',
-    time: '44:00 - 50:00',
-    duration: 360,
-    objective: 'Cobrar. Manejar objeciones. Cerrar o blindar segunda llamada.',
-    content: 'cierre'
-  },
-  {
-    id: 'followup',
-    num: '2.9',
-    title: 'Follow-Up + Emergencias',
-    time: 'Post-demo',
-    duration: 0,
-    objective: 'Pipeline de seguimiento y notas de emergencia.',
-    content: 'followup'
-  }
+const STAGES=[
+  {id:'apertura',num:'2.1',title:'Apertura, Frame y Contexto',time:'0:00-5:00',duration:300,objective:'Autoridad, reglas, tiempo, decision-maker, pago.'},
+  {id:'discovery',num:'2.2',title:'Discovery Hibrido',time:'5:00-20:00',duration:900,objective:'Herida de negocio + vida personal. Numeros duros.'},
+  {id:'intentos',num:'2.3',title:'Agotar Intentos Pasados',time:'20:00-25:00',duration:300,objective:'Desmantelar soluciones anteriores.'},
+  {id:'bottleneck',num:'2.4',title:'Diagnostico + Cost of Inaction',time:'25:00-30:00',duration:300,objective:'Mostrar cuanto pierde HOY.'},
+  {id:'precio',num:'2.5',title:'Transicion + Anclaje de Precio',time:'30:00-32:00',duration:120,objective:'Herida emocional + revelar inversion.'},
+  {id:'pitch',num:'2.6',title:'Pitch de los 5 Pilares',time:'32:00-42:00',duration:600,objective:'Sistema con micro-compromisos.'},
+  {id:'tempcheck',num:'2.7',title:'Temperature Check',time:'42:00-44:00',duration:120,objective:'Que se venda a si mismo.'},
+  {id:'cierre',num:'2.8',title:'Protocolo de Cierre',time:'44:00-50:00',duration:360,objective:'Cobrar / objeciones / 2da llamada.'},
+  {id:'followup',num:'2.9',title:'Follow-Up + Pipeline',time:'Post',duration:0,objective:'Seguimiento post-demo.'}
 ];
+const TOTAL=3000;
+let cur=0,gSec=0,sSec=0,running=false,interval=null,done=new Set();
+let chk=JSON.parse(localStorage.getItem('sm_chk')||'{}');
+let selBot=localStorage.getItem('sm_bot')||'';
 
-const TOTAL_DURATION = 3000; // 50 min
+function fmt(s){return`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+function fms(s){return`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
+function gv(id){return document.getElementById(id)?.value||'';}
+function gn(id){return parseFloat(gv(id))||0;}
 
-// ========== STATE ==========
-let currentStage = 0;
-let globalSeconds = 0;
-let stageSeconds = 0;
-let timerRunning = false;
-let timerInterval = null;
-
-// ========== TIMER ==========
-function formatTime(s) {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+function vars(t){
+  const n=gv('noteNombre')||'[Nombre]',st=gv('noteSetter')||'[Setter]',f=gn('noteFacturacion'),tk=gn('noteTicket'),mt=gn('noteMeta'),ag=gn('noteAgendados'),sh=gn('noteShow'),hr=gv('noteHoras')||'[Horas]',mo=gv('noteMetaOp')||'[Meta Operativa]';
+  const ns=ag-sh,lm=ns*tk,l3=lm*3,sr=ag>0?((sh/ag)*100).toFixed(0):'[Y]';
+  return t.replace(/\[Nombre\]/g,`<span class="var">${n}</span>`)
+    .replace(/\[Setter\]/g,`<span class="var">${st}</span>`)
+    .replace(/\[Facturacion Actual\]/g,`<span class="var">${f?'$'+f.toLocaleString():'[Fact.]'}</span>`)
+    .replace(/\[Ticket\]/g,`<span class="var">${tk?'$'+tk.toLocaleString():'[Ticket]'}</span>`)
+    .replace(/\[Meta de Facturacion\]/g,`<span class="var">${mt?'$'+mt.toLocaleString():'[Meta]'}</span>`)
+    .replace(/\[Meta\]/g,`<span class="var">${mt?'$'+mt.toLocaleString():'[Meta]'}</span>`)
+    .replace(/\[Y\]%/g,`<span class="var">${sr}%</span>`)
+    .replace(/\[Z\]/g,`<span class="var">${ns||'[Z]'}</span>`)
+    .replace(/\[\$Total al mes\]/g,`<span class="var">${lm?'$'+lm.toLocaleString():'[$Total]'}</span>`)
+    .replace(/\[\$Total\]/g,`<span class="var">${lm?'$'+lm.toLocaleString():'[$Total]'}</span>`)
+    .replace(/\[\$Total x 3\]/g,`<span class="var">${l3?'$'+l3.toLocaleString():'[$Totalx3]'}</span>`)
+    .replace(/\[\$Cost of Inaction\]/g,`<span class="var">${lm?'$'+lm.toLocaleString():'[$COI]'}</span>`)
+    .replace(/\[Cost of Inaction\]/g,`<span class="var">${lm?'$'+lm.toLocaleString():'[$COI]'}</span>`)
+    .replace(/\[COI\]/g,`<span class="var">${lm?'$'+lm.toLocaleString():'[$COI]'}</span>`)
+    .replace(/\[Horas\]/g,`<span class="var">${hr}</span>`)
+    .replace(/\[Meta Operativa[^\]]*\]/g,`<span class="var">${mo}</span>`)
+    .replace(/\[\$X USD\]/g,'<span class="var">[$X USD]</span>')
+    .replace(/\[\$X\]/g,`<span class="var">${f?'$'+f.toLocaleString():'[$X]'}</span>`);
 }
 
-function formatTimeShort(s) {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${String(sec).padStart(2,'0')}`;
+// Timer
+function toggleTimer(){if(running){clearInterval(interval);running=false;document.getElementById('btnPlay').innerHTML='&#9654;';}else{interval=setInterval(tick,1000);running=true;document.getElementById('btnPlay').innerHTML='&#10074;&#10074;';}}
+function resetTimer(){clearInterval(interval);running=false;gSec=0;sSec=0;document.getElementById('btnPlay').innerHTML='&#9654;';updateUI();}
+function tick(){gSec++;sSec++;updateUI();}
+
+function updateUI(){
+  document.getElementById('globalClock').textContent=fmt(gSec);
+  const p=Math.min((gSec/TOTAL)*100,100),bar=document.getElementById('globalProgress');
+  bar.style.width=p+'%';bar.style.background=p<70?'var(--green)':p<90?'var(--yellow)':'var(--red)';
+  document.getElementById('globalClock').style.color=p<70?'var(--green)':p<90?'var(--yellow)':'var(--red)';
+  document.getElementById('stageClock').textContent=fms(sSec);
+  const s=STAGES[cur],al=document.getElementById('timeAlert'),ind=document.getElementById('stageIndicator');
+  if(s.duration>0){const r=sSec/s.duration;ind.className='stage-timer-indicator';if(r<0.7){al.className='time-alert';}else if(r<1){ind.classList.add('yellow');al.className='time-alert warn';al.textContent='ACELERA';}else{ind.classList.add('red');al.className='time-alert over';al.textContent='AVANZA';}}
+  else{al.className='time-alert';ind.className='stage-timer-indicator';}
 }
 
-function toggleTimer() {
-  if (timerRunning) {
-    clearInterval(timerInterval);
-    timerRunning = false;
-    document.getElementById('btnPlay').innerHTML = '&#9654;';
-  } else {
-    timerInterval = setInterval(tick, 1000);
-    timerRunning = true;
-    document.getElementById('btnPlay').innerHTML = '&#10074;&#10074;';
-  }
+// Nav
+function buildNav(){document.getElementById('sidebarNav').innerHTML=STAGES.map((s,i)=>`<div class="nav-item ${i===cur?'active':''} ${done.has(i)?'completed':''}" onclick="goTo(${i})"><div class="nav-dot"></div><span class="nav-label">${s.title}</span><span class="nav-time">${s.time}</span></div>`).join('');}
+function goTo(i){if(cur!==i)done.add(cur);cur=i;sSec=0;buildNav();render();updateUI();}
+
+// Render
+function render(){
+  const s=STAGES[cur];
+  document.getElementById('stageNumber').textContent=s.num;
+  document.getElementById('stageTitle').textContent=s.title;
+  document.getElementById('stageObjective').textContent=s.objective;
+  document.getElementById('stageLimit').textContent=s.duration>0?`/ ${fms(s.duration)}`:'---';
+  const a=document.getElementById('contentArea');a.scrollTop=0;
+  const R={apertura:rApertura,discovery:rDiscovery,intentos:rIntentos,bottleneck:rBottleneck,precio:rPrecio,pitch:rPitch,tempcheck:rTempCheck,cierre:rCierre,followup:rFollowup};
+  a.innerHTML=R[s.id]();
+  a.querySelectorAll('.script-header').forEach(h=>h.addEventListener('click',()=>h.parentElement.classList.toggle('open')));
+  a.querySelectorAll('.checklist-item').forEach(c=>{const k=cur+'_'+c.dataset.key;if(chk[k])c.classList.add('checked');c.addEventListener('click',()=>{c.classList.toggle('checked');chk[k]=c.classList.contains('checked');localStorage.setItem('sm_chk',JSON.stringify(chk));});});
+  renderSOS();
 }
 
-function resetTimer() {
-  clearInterval(timerInterval);
-  timerRunning = false;
-  globalSeconds = 0;
-  stageSeconds = 0;
-  document.getElementById('btnPlay').innerHTML = '&#9654;';
-  updateTimerDisplay();
+function SB(i,t,st,b,o=false){return`<div class="script-block ${o?'open':''}"><div class="script-header"><div class="script-header-left"><div class="script-icon ${i}">${i==='talk'?'&#128172;':i==='branch'?'&#10140;':i==='note'?'&#128221;':i==='warn'?'&#9888;':'&#10003;'}</div><div><div class="script-title">${t}</div>${st?`<div class="script-subtitle">${st}</div>`:''}</div></div><span class="script-chevron">&#9660;</span></div><div class="script-body">${vars(b)}</div></div>`;}
+
+function rApertura(){return`<div class="stage-content"><p class="section-label">Checklist de Apertura</p><div class="checklist">${['Confirmar 45 min','Decision-maker (double tie-down)','Pre-calificar pago','Frame de la llamada','Puente con datos del Setter','Estado deseado (zanahoria)'].map((t,i)=>`<div class="checklist-item" data-key="ap${i}"><div class="checklist-box">&#10003;</div><span class="checklist-label">${t}</span></div>`).join('')}</div><div class="section-divider"></div>${SB('talk','Saludo + Tiempo','Primer contacto',`<div class="script-text">"Hola [Nombre], ¿como estas? Antes de arrancar, quiero confirmar: agendamos 45 minutos. ¿Seguimos bien de tiempo o tienes algun paciente esperando?"</div><div class="script-note">Sin tiempo → reagenda. Con tiempo → avanza.</div>`,true)}${SB('talk','Decision-Maker','Double Tie-Down',`<div class="script-text">"Perfecto. Si al final de esta llamada ves que nuestro sistema es exactamente lo que necesitas, ¿tu puedes tomar la decision de avanzar hoy, o tendrias que consultarlo con algun socio o esposo/a?"</div><div class="section-divider"></div><p class="script-instruction"><b>Si dice "yo decido":</b></p><div class="script-text">"Excelente. La decision empieza y termina contigo hoy, ¿correcto?"</div><div class="script-note">Double tie-down. Ya no puede usar objecion del socio.</div><div class="section-divider"></div><p class="script-instruction"><b>Si dice "tengo que consultarlo":</b></p><div class="script-text">"Entendido. ¿Y esa persona pudo unirse hoy? Vamos a ver numeros profundos y si no esta, vas a tener que explicarle todo."</div><div class="script-note">Si no esta → evalua demo completa vs corta.</div>`)}${SB('talk','Frame de la Llamada','Reglas del juego',`<div class="script-text">"Bien, dejame explicarte como va a funcionar esto."</div><div class="script-text">"Primero, preguntas profundas sobre tu operacion. No para juzgarte, sino para diagnosticar el cuello de botella. Luego, si podemos solucionarlo, te digo cuanto cuesta y como lo hacemos. Al final, en el mejor caso terminas siendo cliente hoy. En el peor, te llevas claridad absoluta. Si sientes que no es para ti, dimelo. ¿Estamos de acuerdo?"</div>`)}${SB('talk','Puente Triage + Estado Deseado','Datos del Setter',`<div class="script-text">"Estuve revisando las notas de [Setter]. Actualmente facturan [Facturacion Actual], ticket de [Ticket], meta de [Meta]. ¿Es correcto?"</div><div class="script-text">"Mas alla de los numeros, ¿que te hizo decir 'necesito ayuda AHORA' y agendar esta llamada?"</div><div class="script-note">Callate y escucha.</div><div class="section-divider"></div><div class="script-text">"Y si proyectamos a 6-12 meses, ¿como se ve la clinica ideal? ¿Cual es ese estado deseado operativo y personal?"</div><div class="script-note">Anota su vision = la zanahoria del cierre.</div>`)}${SB('talk','Pre-calificacion de Pago','Casual',`<div class="script-text">"Solo para tenerlo en cuenta: ¿tu manejas la parte financiera o hay alguien de contabilidad?"</div><div class="section-divider"></div><p class="script-instruction"><b>Si dice contabilidad:</b></p><div class="script-text">"Si decides avanzar, ¿esa persona podria procesar el pago hoy?"</div>`)}</div>`;}
+
+function rDiscovery(){return`<div class="stage-content"><p class="section-label">Bloque A: Dolor Operativo (Downplay)</p><p class="section-sublabel">Minimiza para que amplifiquen</p>${SB('talk','Desconexion','Downplay',`<div class="script-text">"Con este escenario, imagino que a veces es un poco dificil desconectarte, ¿o no es tanto?"</div><div class="script-note">Prospecto: "¿Un poco? Trabajo [Horas] horas..."</div>`,true)}${SB('talk','Dependencia','Downplay',`<div class="script-text">"Supongo que la clinica puede funcionar sin ti unos dias, ¿o es mas complicado?"</div>`)}${SB('talk','Tiempo del problema','Downplay',`<div class="script-text">"Imagino que llevas un tiempito con esto, ¿o es reciente?"</div>`)}${SB('talk','Meta operativa','Municion cierre',`<div class="script-text">"Si llegamos a [Meta de Facturacion], ¿eso te permite [contratar doctor / abrir sede / salir de operacion], o todavia no?"</div><div class="script-note">Anota: municion para el cierre.</div>`)}<div class="section-divider"></div><p class="section-label">Bloque B: Numeros del Funnel</p>${SB('talk','Transicion','',`<div class="script-text">"Ok, para diagnosticar la fuga de dinero, necesito una radiografia rapida de tus numeros."</div>`,true)}<table class="data-table"><thead><tr><th>#</th><th>Pregunta</th><th>Dato</th></tr></thead><tbody><tr><td>1</td><td><em>"¿Cuantos leads/mes?"</em></td><td>Volumen</td></tr><tr><td>2</td><td><em>"¿Cuantos agendan?"</em></td><td>Agendamiento</td></tr><tr><td>3</td><td><em>"¿Cuantos asisten?"</em></td><td>Show Rate</td></tr><tr><td>4</td><td><em>"¿Cuantos compran?"</em></td><td>Cierre</td></tr><tr><td>5</td><td><em>"¿Cuanto en ads/mes?"</em></td><td>Inversion</td></tr></tbody></table>${SB('warn','Pregunta de Rentabilidad','CRUCIAL',`<div class="script-text">"Facturan [$X]. Pero facturacion no es ganancia. ¿Los hace rentables, punto de equilibrio, o perdiendo dinero?"</div><div class="script-note">Revela urgencia financiera real.</div>`)}</div>`;}
+
+function rIntentos(){return`<div class="stage-content">${SB('talk','Agotar intentos','',`<div class="script-text">"¿Que han intentado antes? ¿Agencias, cursos, comprar leads?"</div>`,true)}${SB('talk','Inteligencia Competitiva','',`<div class="script-text">"¿Has hablado con otras empresas similares recientemente?"</div><p class="script-instruction"><b>Si dice si:</b></p><div class="script-text">"¿Que no te convencio para no haber cerrado ya?"</div><div class="script-note">Anota: que NO hacer en tu pitch.</div>`)}${SB('branch','Si usaron agencias','Desmontar',`<div class="script-text">"¿Implementaron filtro por ingresos antes del lead?"</div><div class="script-note">Respuesta: No.</div><div class="script-text">"¿Equipo que llamara en menos de 5 min?"</div><div class="script-note">Respuesta: No.</div><div class="script-text">"Esa es la razon: estabas comprando leads, no un sistema de adquisicion de pacientes."</div>`)}${SB('branch','Cariño por agencia actual','',`<div class="script-text">"Si tu agencia pudiera resolver esto, ¿no lo habria resuelto ya? Llevas [X meses] con ellos. A veces el cariño nos cuesta dinero."</div>`)}</div>`;}
+
+function rBottleneck(){const bs=[{k:'estadio',t:'[1]',n:'Estadio Vacio',th:'< 100 leads/mes'},{k:'hemorragia',t:'[2]',n:'Hemorragia de Leads',th:'Agendamiento < 12%'},{k:'noshow',t:'[3]',n:'Plaga del No-Show',th:'Show Rate < 60%'},{k:'ticket',t:'[4]',n:'Brecha del Ticket',th:'Ticket < $2,000'},{k:'cierre',t:'[5]',n:'Cierre a Ciegas',th:'Tasa cierre < 40%'}];return`<div class="stage-content"><p class="section-label">Paso 1: Identifica Bottleneck</p><div class="bottleneck-grid">${bs.map(b=>`<div class="bottleneck-card ${selBot===b.k?'selected':''}" onclick="selBN('${b.k}',this)"><div class="bottleneck-tag">${b.t}</div><div class="bottleneck-name">${b.n}</div><div class="bottleneck-threshold">${b.th}</div></div>`).join('')}</div><div class="section-divider"></div><p class="section-label">Paso 2: Cost of Inaction</p>${SB('warn','Script COI','Usa numeros del panel',`<div class="script-text">"Mira [Nombre], el diagnostico es claro. Tu problema no es el marketing. Tienes [X] agendados, pero solo asiste el [Y]%. Estas perdiendo [Z] pacientes al mes que ya habian dicho que si."</div><div class="script-text">"A tu ticket de [Ticket], estas dejando <b>[$Total] sobre la mesa cada mes</b>. En 3 meses, [$Total x 3]. Y lo peor: esto te mantiene trabajando [Horas]h/semana y te impide [Meta Operativa]. ¿Te hace sentido?"</div>`,true)}</div>`;}
+
+function rPrecio(){return`<div class="stage-content">${SB('talk','Re-abrir herida','Downplay',`<div class="script-text">"Basandome en todo, lo que hacemos en SacaMedi podria funcionar. Porque me dijiste que pierden [$Total al mes] y que genera... creo que mencionaste un poco de frustracion, ¿o no era tanto?"</div><div class="script-note">Prospecto amplifica.</div>`,true)}${SB('warn','Revelar Precio','SILENCIO',`<div class="script-text">"Tenemos un sistema probado. Pero antes de mostrarte como funciona, me gusta ser transparente. Implementar todo tiene una inversion de <b>[$X USD]</b>."</div><div class="script-note">SILENCIO. Deja que asimile.</div>`)}${SB('talk','Tie-Down','Si reacciona',`<div class="script-text">"Se que suena importante. Pero hoy pierdes [$Cost of Inaction]/mes. Si te muestro como lo recuperas y se paga solo, ¿te gustaria verlo?"</div><div class="script-note">Espera el "si".</div>`)}</div>`;}
+
+function rPitch(){const ps=[{n:1,nm:'Paywall Pixel Protocol',d:'Algoritmo busca gente con tarjeta, no curiosos.',a:'Vuelos baratos vs. Primera clase.',c:'¿Ves como resuelve los leads de baja calidad?'},{n:2,nm:'Doctor Brand Authority',d:'Posicionamos tu marca para que lleguen pre-vendidos.',a:'Artista en la calle vs. Estadio lleno.',c:'¿Tiene sentido como te separa de la competencia?'},{n:3,nm:'AI 360 Engine',d:'Seguimiento en <5 min para matar el No-Show.',a:'Marketing vende antes que tu equipo humano.',c:'¿Como impactaria tu tasa de asistencia?'},{n:4,nm:'Sales Training',d:'Entrenamos a cerrar High Ticket, no evaluaciones baratas.',a:'',c:'¿Estamos en la misma pagina?'},{n:5,nm:'Role Command Center',d:'Trazabilidad total: que anuncio trajo al paciente de $3,000.',a:'',c:'¿Ves el valor de esta claridad?'}];const cf=JSON.parse(localStorage.getItem('sm_pil')||'{}');return`<div class="stage-content"><p class="section-label">5 Pilares — Marca cuando confirma</p>${ps.map(p=>`<div class="pillar-card ${cf[p.n]?'confirmed':''}" onclick="togPil(${p.n},this)"><div class="pillar-check">&#10003;</div><div class="pillar-content"><div class="pillar-number">PILAR ${p.n}</div><div class="pillar-name">${p.nm}</div><div class="pillar-desc">"${p.d}"</div>${p.a?`<div class="script-instruction">Analogia: ${p.a}</div>`:''}<div class="pillar-cfa">"${p.c}"</div></div></div>`).join('')}</div>`;}
+
+function rTempCheck(){return`<div class="stage-content"><p class="section-label">Temperature Check</p><table class="data-table"><thead><tr><th>Tipo</th><th>Para</th><th>Script</th></tr></thead><tbody><tr><td><b>Alineacion</b></td><td>Cautelosos</td><td><em>"¿Estamos en la misma sintonia, o algo te hace ruido?"</em></td></tr><tr><td><b>Sentido</b></td><td>Analiticos</td><td><em>"¿Esto es la pieza que faltaba, o algo no cuadra?"</em></td></tr><tr><td><b>Escepticismo</b></td><td>Quemados</td><td><em>"¿100% que soluciona, o duda de que pase lo mismo?"</em></td></tr><tr><td><b>Corazon</b></td><td>Emocionales</td><td><em>"Con el corazon, ¿'vamos' o 'tal vez'?"</em></td></tr></tbody></table><div class="section-divider"></div>${SB('warn','Commitment Question','Que se venda',`<div class="script-text">"¿Por que sientes que si? ¿Que es lo que mas te hace sentido?"</div><div class="script-note">Deja que explique por que necesita tu servicio.</div>`,true)}</div>`;}
+
+function rCierre(){return`<div class="stage-content"><div class="sub-nav">${['P1:Cobro','P2:Objecion','P3:Resolver','P4:Deposito','P5:Resistencia','P6:2da Llamada'].map((t,i)=>`<div class="sub-nav-btn" onclick="scrollSub('sub${i}',this)">${t}</div>`).join('')}</div><div id="sub0">${SB('check','PASO 1: Cobro Directo','Lenguaje neutro',`<div class="script-text">"Perfecto. El siguiente paso: hacer el arreglo para tapar esa fuga de [$Cost of Inaction]. Tarjeta de credito o debito. ¿Como procedes?"</div><div class="script-note">Envia link. SILENCIO.</div>`,true)}</div><div class="section-divider" id="sub1"></div><p class="section-label">PASO 2: Objecion</p>${SB('talk','2A Pacing','',`<div class="script-text"><b>"Ningun problema."</b></div><div class="script-note">Calma. Pausa 3s.</div>`)}${SB('talk','2B Clarificar','',`<p class="script-instruction"><b>"Es caro":</b></p><div class="script-text">"¿Caro comparado con marketing actual, sin presupuesto, u otra cosa?"</div><div class="section-divider"></div><p class="script-instruction"><b>"Pensarlo":</b></p><div class="script-text">"¿Que especificamente quieres repasar?"</div>`)}${SB('talk','2C Aislar','Should vs How',`<div class="script-text">"¿Es que no es lo correcto, o es como hacerlo funcionar financieramente?"</div>`)}<div class="section-divider" id="sub2"></div><p class="section-label">PASO 3: Arbol de Objeciones</p><div><div class="dt-question">¿Cual es la objecion real?</div><div class="dt-options"><div class="dt-option" onclick="shObj('pensarlo',this)">"Pensarlo"</div><div class="dt-option" onclick="shObj('caro',this)">"Es caro"</div><div class="dt-option" onclick="shObj('socio',this)">"Socio/esposo"</div><div class="dt-option" onclick="shObj('garantia',this)">"Garantias"</div><div class="dt-option" onclick="shObj('opciones',this)">"Investigar"</div></div><div class="dt-result" id="obj-pensarlo"><p class="section-label" style="color:var(--yellow)">Urgencia</p><div class="script-text">${vars('"¿Que info nueva tendras mañana? El problema — esos [$Cost of Inaction]/mes — no se pausa."')}</div><div class="dt-back" onclick="rsObj()">&#8592; Otras</div></div><div class="dt-result" id="obj-caro"><p class="section-label" style="color:var(--yellow)">Precio</p><div class="script-text">"Y si fuera $500, ¿lo harias?"</div><div class="script-note">Si → valor percibido. No → objecion escondida.</div><div class="script-text">${vars('"Hoy pierdes [$Cost of Inaction]/mes. En 3 meses: [$Total x 3]. ¿Puedes seguir pagando el costo de NO tenerlo?"')}</div><div class="dt-back" onclick="rsObj()">&#8592; Otras</div></div><div class="dt-result" id="obj-socio"><p class="section-label" style="color:var(--yellow)">Socio</p><div class="script-text">"¿Cual sera su principal preocupacion? ¿Precio, riesgo, tiempo?"</div><div class="script-text">"Si te pregunta '¿y si no funciona?', ¿que le dirias?"</div><div class="dt-back" onclick="rsObj()">&#8592; Otras</div></div><div class="dt-result" id="obj-garantia"><p class="section-label" style="color:var(--yellow)">Garantias</p><div class="script-text">${vars('"La garantia: hoy pierdes [$Cost of Inaction]/mes sin nosotros. El sistema lo recupera en semanas. Confia en los numeros que diagnosticamos juntos."')}</div><div class="dt-back" onclick="rsObj()">&#8592; Otras</div></div><div class="dt-result" id="obj-opciones"><p class="section-label" style="color:var(--yellow)">Investigar</p><div class="script-text">"Perfecto, te lo recomiendo. Pero preguntales: ¿incluyen Pilar 1? ¿Pilar 2? ¿Pilar 3? Si no, ya sabes por que estas aqui."</div><div class="dt-back" onclick="rsObj()">&#8592; Otras</div></div></div>${SB('talk','SUPPOSE QUESTION','Post-objecion',`<div class="script-text">"Supongamos que lo resolvemos. ¿Hay otro tema antes de avanzar?"</div><div class="script-note">Si no → cobro.</div>`)}<div class="section-divider" id="sub3"></div><p class="section-label">PASO 4: Deposito</p>${SB('check','Script','Problema logistico',`<div class="script-text">"Genial que estes 100% a bordo. Tomamos un deposito: 100% reembolsable, arrancamos config en back-end."</div><div class="script-text">"Deposito de $1,000 USD. ¿Te lo envio?"</div>`)}<div class="deposit-ladder"><div class="deposit-step"><div class="deposit-step-num">1</div><div class="deposit-amount">$1,000</div><div class="deposit-script">Inicial</div></div><div class="deposit-step"><div class="deposit-step-num">2</div><div class="deposit-amount">$500</div><div class="deposit-script">"¿$500 ahora y resto el [Dia]?"</div></div><div class="deposit-step"><div class="deposit-step-num">3</div><div class="deposit-amount">$250</div><div class="deposit-script">"Con $250 aseguramos cupo."</div></div></div><div class="section-divider" id="sub4"></div><p class="section-label">PASO 5: Resistencia</p><div class="resistance-grid"><div class="resistance-card green-level"><div class="resistance-label">VERDE</div><div class="resistance-signal">Objecion logica, tono abierto</div><div class="resistance-action">Sigue. Resuelve.</div></div><div class="resistance-card yellow-level"><div class="resistance-label">AMARILLO</div><div class="resistance-signal">Repite 2x, tono cortante</div><div class="resistance-action">Pacing + deposito.</div></div><div class="resistance-card red-level"><div class="resistance-label">ROJO</div><div class="resistance-signal">"No me presiones"</div><div class="resistance-action"><b>PARA.</b> 2da llamada.</div></div></div><div class="section-divider" id="sub5"></div><p class="section-label">PASO 6: 2da Llamada Blindada</p>${SB('talk','6A Soltar','',`<div class="script-text">"Sabes que, [Nombre]... No quiero que decidas ahora. Piensalo bien. Si entras, quiero que sea 100% convencido."</div>`)}${SB('talk','6B Agendar','24-48h',`<div class="script-text">"Agendemos 15 min mañana. No repito nada, solo resolvemos dudas. ¿[Hora A] o [Hora B]?"</div>`)}${SB('check','6C Anti-Ghosting','3 capas',`<div class="checklist"><div class="checklist-item" data-key="ag0"><div class="checklist-box">&#10003;</div><span class="checklist-label"><b>Compromiso:</b> "¿Me avisas si reagendas?"</span></div><div class="checklist-item" data-key="ag1"><div class="checklist-box">&#10003;</div><span class="checklist-label"><b>Tarea:</b> "Material de 5 min. ¿Lo revisas?"</span></div><div class="checklist-item" data-key="ag2"><div class="checklist-box">&#10003;</div><span class="checklist-label"><b>WhatsApp:</b> "Te mando mensaje ahora."</span></div></div>`)}${SB('talk','6D Rapport','Pre-colgar',`<div class="script-text">"Antes de colgar, ¿como va [algo personal que menciono]?"</div>`)}${SB('note','6E 2da Llamada','10-15 min',`<p class="script-instruction"><b>Apertura:</b> "¿Revisaste el material?"</p><p class="script-instruction"><b>Directo:</b> "¿Hablaste con [Socio]? ¿Que dijo?"</p><p class="script-instruction"><b>Si no seguro:</b></p><div class="script-text">"¿Hay algo que pueda hacer, o no es el momento?"</div>`)}</div>`;}
+
+function rFollowup(){return`<div class="stage-content"><p class="section-label">Pipeline</p><p class="section-sublabel">30-40% de cierres vienen del follow-up</p><div class="pipeline-grid"><div class="pipeline-card"><div class="pipeline-tag">HOT</div><div class="pipeline-desc">Dijo si, no pago.</div><div class="pipeline-freq">24h x 7-10d</div></div><div class="pipeline-card"><div class="pipeline-tag">WARM</div><div class="pipeline-desc">Interes + objecion.</div><div class="pipeline-freq">48-72h x 30d</div></div><div class="pipeline-card"><div class="pipeline-tag">COLD</div><div class="pipeline-desc">Sin respuesta 10d+</div><div class="pipeline-freq">2x/mes</div></div></div><div class="section-divider"></div><p class="section-label">Follow-Up</p>${SB('talk','Dolor (D1-2)','',`<div class="script-text">${vars('"Estaba pensando en que pierdes [$Cost of Inaction]/mes. Podemos tapar eso esta semana. ¿5 min?"')}</div>`)}${SB('talk','Curiosidad (D3-4)','',`<div class="script-text">"Algo rapido que te va a interesar. ¿5 min?"</div>`)}${SB('talk','Re-Oferta (D5-7)','',`<div class="script-text">"Hable con el equipo. Hay forma de [resolver objecion]. ¿5 min?"</div>`)}${SB('warn','Red Flags (D7-10)','',`<div class="script-text">"Me preocupa cuando dejan de responder. Te necesito 100% a bordo."</div>`)}${SB('talk','Humor (D10+)','',`<div class="script-text">"¿Sigues vivo? No te persigo, pero... ¿el bus?"</div>`)}${SB('note','Cerrar Pipeline','10d sin respuesta',`<div class="script-text">${vars('"[Nombre], no es el momento. Libero tu espacio. Tienes mi contacto. Exito con la clinica."')}</div>`)}</div>`;}
+
+// SOS
+function renderSOS(){document.getElementById('sosBody').innerHTML=[
+  {t:'"No me pongas la soga"',s:'"Tienes razon. No gano nada metiendote en algo que no es para ti. Si decides hacerlo, con toda la info. Si no, cero problema."'},
+  {t:'Se acaba el tiempo',s:vars('"[Nombre], ya conoces la inversion y como solucionamos [$Cost of Inaction]. Te envio el link: si avanzas en 30 min, arrancamos. Si no, 15 min mañana."')},
+  {t:'Prospecto divaga',s:vars('"Eso es super interesante, [Nombre]. Lo anoto. Pero volvamos a [tema]. ¿Ok?"')},
+  {t:'Pide descuento',s:'"No manejamos descuentos — el sistema se paga solo. Lo que si podemos: estructurar el pago. ¿Te ayudaria?"'},
+  {t:'"Voy a investigar"',s:'"Perfecto, te lo recomiendo. Preguntales: ¿Pilar 1? ¿Pilar 2? ¿Pilar 3? Si la respuesta es no, ya sabes."'},
+  {t:'"¿Que garantias?"',s:vars('"Hoy pierdes [$Cost of Inaction]/mes sin nosotros. El sistema recupera eso en semanas. Confia en los numeros que diagnosticamos juntos."')}
+].map(e=>`<div class="emergency-block"><div class="emergency-title">${e.t}</div><div class="script-text">${e.s}</div></div>`).join('');}
+
+// Interactions
+function selBN(k,el){document.querySelectorAll('.bottleneck-card').forEach(c=>c.classList.remove('selected'));el.classList.add('selected');selBot=k;localStorage.setItem('sm_bot',k);document.getElementById('noteBottleneck').value=el.querySelector('.bottleneck-name').textContent;onNoteChange();}
+function togPil(n,el){el.classList.toggle('confirmed');const c=JSON.parse(localStorage.getItem('sm_pil')||'{}');c[n]=el.classList.contains('confirmed');localStorage.setItem('sm_pil',JSON.stringify(c));}
+function shObj(k,el){document.querySelectorAll('.dt-option').forEach(o=>o.classList.remove('selected'));document.querySelectorAll('.dt-result').forEach(r=>r.classList.remove('visible'));el.classList.add('selected');document.getElementById('obj-'+k).classList.add('visible');}
+function rsObj(){document.querySelectorAll('.dt-option').forEach(o=>o.classList.remove('selected'));document.querySelectorAll('.dt-result').forEach(r=>r.classList.remove('visible'));}
+function scrollSub(id,btn){document.querySelectorAll('.sub-nav-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});}
+function toggleNotes(){document.getElementById('notesSidebar').classList.toggle('collapsed');}
+function toggleSOS(){document.getElementById('sosPanel').classList.toggle('open');}
+
+// Notes
+const NF=['noteNombre','noteSetter','noteDM','noteFacturacion','noteTicket','noteMeta','noteLeads','noteAgendados','noteShow','noteCierran','noteAds','noteHoras','noteVision','noteDolor','noteIntentos','noteBottleneck','noteObjeciones','noteMetaOp'];
+function onNoteChange(){const d={};NF.forEach(f=>d[f]=document.getElementById(f)?.value||'');localStorage.setItem('sm_notes',JSON.stringify(d));calc();render();}
+function loadNotes(){try{const d=JSON.parse(localStorage.getItem('sm_notes')||'{}');Object.keys(d).forEach(k=>{const el=document.getElementById(k);if(el)el.value=d[k];});}catch(e){}calc();}
+function calc(){
+  const l=gn('noteLeads'),a=gn('noteAgendados'),s=gn('noteShow'),c=gn('noteCierran'),ad=gn('noteAds'),tk=gn('noteTicket');
+  document.getElementById('calcAgendamiento').textContent=l>0?((a/l)*100).toFixed(1)+'%':'--';
+  document.getElementById('calcShowRate').textContent=a>0?((s/a)*100).toFixed(1)+'%':'--';
+  document.getElementById('calcCierre').textContent=s>0?((c/s)*100).toFixed(1)+'%':'--';
+  document.getElementById('calcCPL').textContent=l>0?'$'+(ad/l).toFixed(0):'--';
+  document.getElementById('calcCPP').textContent=c>0?'$'+(ad/c).toFixed(0):'--';
+  const ns=a-s,lm=ns*tk;
+  document.getElementById('calcNoShows').textContent=ns>0?ns+' pac.':'--';
+  document.getElementById('calcLostMonth').textContent=lm>0?'$'+lm.toLocaleString():'--';
+  document.getElementById('calcLost3').textContent=lm>0?'$'+(lm*3).toLocaleString():'--';
+  document.getElementById('calcCOI').textContent=lm>0?'$'+lm.toLocaleString():'--';
 }
 
-function tick() {
-  globalSeconds++;
-  stageSeconds++;
-  updateTimerDisplay();
-}
-
-function updateTimerDisplay() {
-  document.getElementById('globalClock').textContent = formatTime(globalSeconds);
-  const pct = Math.min((globalSeconds / TOTAL_DURATION) * 100, 100);
-  const bar = document.getElementById('globalProgress');
-  bar.style.width = pct + '%';
-
-  if (pct < 70) bar.style.background = 'var(--green)';
-  else if (pct < 90) bar.style.background = 'var(--yellow)';
-  else bar.style.background = 'var(--red)';
-
-  document.getElementById('globalClock').style.color =
-    pct < 70 ? 'var(--green)' : pct < 90 ? 'var(--yellow)' : 'var(--red)';
-
-  // Stage timer
-  const stage = STAGES[currentStage];
-  document.getElementById('stageClock').textContent = formatTimeShort(stageSeconds);
-
-  if (stage.duration > 0) {
-    const ratio = stageSeconds / stage.duration;
-    const ind = document.getElementById('stageIndicator');
-    ind.className = 'stage-timer-indicator';
-    if (ratio < 0.7) { ind.style.background = 'var(--green)'; }
-    else if (ratio < 1.0) { ind.classList.add('yellow'); }
-    else { ind.classList.add('red'); }
-  }
-}
-
-// ========== NAVIGATION ==========
-function buildNav() {
-  const nav = document.getElementById('sidebarNav');
-  nav.innerHTML = STAGES.map((s, i) => `
-    <div class="nav-item ${i === currentStage ? 'active' : ''}" onclick="goToStage(${i})" data-stage="${i}">
-      <div class="nav-dot"></div>
-      <span class="nav-label">${s.title}</span>
-      <span class="nav-time">${s.time}</span>
-    </div>
-  `).join('');
-}
-
-function goToStage(i) {
-  currentStage = i;
-  stageSeconds = 0;
-  buildNav();
-  renderStage();
-  updateTimerDisplay();
-}
-
-// ========== CONTENT RENDERERS ==========
-function renderStage() {
-  const s = STAGES[currentStage];
-  document.getElementById('stageNumber').textContent = `ETAPA ${s.num}`;
-  document.getElementById('stageTitle').textContent = s.title;
-  document.getElementById('stageObjective').textContent = s.objective;
-  document.getElementById('stageLimit').textContent = s.duration > 0 ? `/ ${formatTimeShort(s.duration)}` : '---';
-
-  const area = document.getElementById('contentArea');
-  area.scrollTop = 0;
-
-  switch(s.content) {
-    case 'apertura': area.innerHTML = renderApertura(); break;
-    case 'discovery': area.innerHTML = renderDiscovery(); break;
-    case 'intentos': area.innerHTML = renderIntentos(); break;
-    case 'bottleneck': area.innerHTML = renderBottleneck(); break;
-    case 'precio': area.innerHTML = renderPrecio(); break;
-    case 'pitch': area.innerHTML = renderPitch(); break;
-    case 'tempcheck': area.innerHTML = renderTempCheck(); break;
-    case 'cierre': area.innerHTML = renderCierre(); break;
-    case 'followup': area.innerHTML = renderFollowup(); break;
-  }
-
-  // Re-attach listeners
-  document.querySelectorAll('.script-header').forEach(h => {
-    h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
-  });
-  document.querySelectorAll('.checklist-item').forEach(c => {
-    c.addEventListener('click', () => c.classList.toggle('checked'));
-  });
-}
-
-function scriptBlock(icon, title, subtitle, bodyHTML, openByDefault = false) {
-  return `
-    <div class="script-block ${openByDefault ? 'open' : ''}">
-      <div class="script-header">
-        <div class="script-header-left">
-          <div class="script-icon ${icon}">
-            ${icon === 'talk' ? '&#128172;' : icon === 'branch' ? '&#10140;' : icon === 'note' ? '&#128221;' : icon === 'warn' ? '&#9888;' : '&#10003;'}
-          </div>
-          <div>
-            <div class="script-title">${title}</div>
-            ${subtitle ? `<div class="script-subtitle">${subtitle}</div>` : ''}
-          </div>
-        </div>
-        <span class="script-chevron">&#9660;</span>
-      </div>
-      <div class="script-body">${bodyHTML}</div>
-    </div>`;
-}
-
-// ---- APERTURA ----
-function renderApertura() {
-  return `
-    <div class="stage-content">
-      <div class="rules-banner">
-        <div class="rule-chip">1. Precio ANTES del Pitch<span class="rule-tooltip">Filtra curiosos temprano y convierte el pitch en justificación lógica de la inversión.</span></div>
-        <div class="rule-chip">2. Emoción B2B con Downplay<span class="rule-tooltip">Minimiza su dolor ("un poco frustrante") para que ellos lo amplifiquen.</span></div>
-        <div class="rule-chip">3. Cero Coaching<span class="rule-tooltip">Si das la solución gratis en el discovery, matas la urgencia de compra.</span></div>
-        <div class="rule-chip">4. Lenguaje Neutro<span class="rule-tooltip">El prospecto debe persuadirse a sí mismo. No uses "firmar", "cerrar".</span></div>
-        <div class="rule-chip">5. Pre-califica Pago<span class="rule-tooltip">Pregunta en la apertura quién tiene acceso a la tarjeta/cuenta.</span></div>
-      </div>
-
-      <p class="section-label">Checklist de Apertura</p>
-      <div class="checklist">
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Confirmar tiempo: 45 minutos disponibles</span></div>
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Calificar decision-maker (double tie-down)</span></div>
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Pre-calificar método de pago</span></div>
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Setear el frame de la llamada</span></div>
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Hacer el puente con datos del Setter</span></div>
-        <div class="checklist-item"><div class="checklist-box">&#10003;</div><span class="checklist-label">Preguntar estado deseado (la zanahoria)</span></div>
-      </div>
-
-      <div class="section-divider"></div>
-
-      ${scriptBlock('talk', 'Saludo + Confirmación de Tiempo', 'Primer contacto', `
-        <div class="script-text">"Hola [Nombre], ¿cómo estás? Antes de arrancar, quiero confirmar: agendamos 45 minutos para esta llamada. ¿Seguimos bien de tiempo o tienes algún paciente esperando?"</div>
-        <div class="script-note">Si no tiene tiempo, reagenda o ajusta. Si tiene tiempo, avanzas.</div>
-      `, true)}
-
-      ${scriptBlock('talk', 'Calificación de Decision-Maker', 'Double Tie-Down', `
-        <div class="script-text">"Perfecto. Y para entender cómo funcionan en la clínica: si al final de esta llamada ves que nuestro sistema es exactamente lo que necesitas para llegar a tus metas, ¿tú puedes tomar la decisión de avanzar hoy mismo, o tendrías que consultarlo con algún socio o esposo/a?"</div>
-        <div class="section-divider"></div>
-        <p class="script-instruction"><strong>Si dice "yo tomo la decisión":</strong></p>
-        <div class="script-text">"Excelente. Entonces, si te hace sentido, la decisión empieza y termina contigo hoy, ¿correcto?"</div>
-        <div class="script-note">Double tie-down. Si dice que sí, ya no puede usar la objeción del socio al final.</div>
-        <div class="section-divider"></div>
-        <p class="script-instruction"><strong>Si dice "tengo que consultarlo":</strong></p>
-        <div class="script-text">"Entendido. ¿Y esa persona pudo unirse a la llamada hoy? Porque vamos a ver números y estrategias profundas, y si no está, vas a tener que explicarle todo tú después."</div>
-        <div class="script-note">Si no está, evalúa si vale la pena hacer la demo completa o versión corta para reagendar con ambos.</div>
-      `)}
-
-      ${scriptBlock('talk', 'El Frame de la Llamada', 'Setear las reglas del juego', `
-        <div class="script-text">"Bien, déjame explicarte cómo va a funcionar esto para que aprovechemos al máximo el tiempo."</div>
-        <div class="script-text">"Primero, voy a hacerte algunas preguntas profundas sobre tu operación actual. No para juzgarte, sino para diagnosticar exactamente dónde está el cuello de botella que te frena. Luego, si veo que podemos solucionarlo, te digo cuánto cuesta y te muestro cómo lo hacemos. Al final, en el mejor de los casos terminas siendo cliente hoy. En el peor, te llevas claridad absoluta de qué debes arreglar. Si en algún momento sientes que esto no es para ti, dímelo con total confianza. ¿Estamos de acuerdo?"</div>
-      `)}
-
-      ${scriptBlock('talk', 'Puente de la Triage + Estado Deseado', 'Conectar con datos del Setter', `
-        <div class="script-text">"Perfecto. Estuve revisando las notas que me pasó [Setter]. Me comentó que actualmente están facturando alrededor de [Facturación Actual], que su ticket promedio es de [Ticket], y que la meta es llegar a [Meta] en los próximos meses. ¿Es correcto?"</div>
-        <div class="script-text">"Genial. Para no hacerte repetir lo mismo, cuéntame con tus propias palabras: más allá de los números, ¿qué fue lo que te hizo decir 'necesito ayuda con esto AHORA' y agendar esta llamada?"</div>
-        <div class="script-note">Cállate y escucha. Deja que se desahoguen.</div>
-        <div class="section-divider"></div>
-        <div class="script-text">"Y si proyectamos a 6 o 12 meses, ¿cómo se ve la clínica ideal para ti? ¿Cuál es ese estado deseado al que quieres llegar a nivel operativo y personal?"</div>
-        <div class="script-note">Anota su visión. Esta es la 'zanahoria' que usarás en el cierre.</div>
-      `)}
-
-      ${scriptBlock('talk', 'Pre-calificación de Pago', 'Casual, no invasiva', `
-        <div class="script-text">"Perfecto. Y solo para tenerlo en cuenta por si avanzamos hoy: cuando toman decisiones de inversión en la clínica, ¿tú manejas directamente la parte financiera o hay alguien de contabilidad que se encarga de los pagos?"</div>
-        <div class="section-divider"></div>
-        <p class="script-instruction"><strong>Si dice "contabilidad / mi contador / otra persona":</strong></p>
-        <div class="script-text">"Entendido. Si al final de la llamada decides que quieres avanzar, ¿esa persona podría estar disponible para procesar el pago hoy, o cómo funciona normalmente?"</div>
-      `)}
-    </div>`;
-}
-
-// ---- DISCOVERY ----
-function renderDiscovery() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Bloque A: El Dolor Operativo</p>
-      <p class="section-sublabel">Técnica de Downplay — Minimiza para que amplifiquen</p>
-
-      ${scriptBlock('talk', 'Desconexión del negocio', 'Downplay', `
-        <div class="script-text">"Entiendo. Y con este escenario actual, imagino que a veces puede ser un poco difícil desconectarte del negocio, ¿o no es tanto así?"</div>
-        <div class="script-note">Prospecto amplifica: "¿Un poco? Trabajo 60 horas a la semana..."</div>
-      `, true)}
-
-      ${scriptBlock('talk', 'Dependencia operativa', 'Downplay', `
-        <div class="script-text">"Supongo que la clínica puede funcionar más o menos sin ti por unos días si te vas de vacaciones, ¿o es más complicado que eso?"</div>
-      `)}
-
-      ${scriptBlock('talk', 'Tiempo del problema', 'Downplay', `
-        <div class="script-text">"Imagino que esto es algo que llevas un tiempito tratando de resolver, ¿o es algo más reciente?"</div>
-      `)}
-
-      ${scriptBlock('talk', 'Meta operativa', 'Munición para el cierre', `
-        <div class="script-text">"Si logramos llegar a esa meta de [Meta de Facturación], ¿eso te permite [contratar a otro doctor / abrir otra sede / salir de la operación diaria], o todavía no?"</div>
-        <div class="script-note">Anota su respuesta. Esta es tu munición para el cierre.</div>
-      `)}
-
-      <div class="section-divider"></div>
-      <p class="section-label">Bloque B: El Discovery Cuantitativo</p>
-      <p class="section-sublabel">Los números duros del funnel</p>
-
-      ${scriptBlock('talk', 'Transición a números', '', `
-        <div class="script-text">"Ok, entiendo perfectamente el impacto que esto tiene en tu día a día. Ahora, para poder diagnosticar dónde está la fuga exacta de dinero, necesito hacerte una radiografía rápida de tus números."</div>
-      `, true)}
-
-      <table class="data-table">
-        <thead><tr><th>#</th><th>Pregunta</th><th>Dato que extraes</th></tr></thead>
-        <tbody>
-          <tr><td>1</td><td><em>"¿Cuántos mensajes o leads reciben al mes?"</em></td><td>Volumen de leads</td></tr>
-          <tr><td>2</td><td><em>"De esos [X] leads, ¿cuántos agendan una cita?"</em></td><td>Tasa de agendamiento</td></tr>
-          <tr><td>3</td><td><em>"De los que agendan, ¿cuántos realmente asisten?"</em></td><td>Show Rate</td></tr>
-          <tr><td>4</td><td><em>"De los que asisten, ¿cuántos compran un tratamiento?"</em></td><td>Tasa de cierre</td></tr>
-          <tr><td>5</td><td><em>"¿Cuánto invierten actualmente en publicidad al mes?"</em></td><td>Inversión en ads</td></tr>
-        </tbody>
-      </table>
-
-      ${scriptBlock('warn', 'La Pregunta de Rentabilidad', 'CRUCIAL — no saltar', `
-        <div class="script-text">"Pero antes de ver los leads... me mencionaste que facturan [$X]. Pero facturación no es ganancia. Con los costos operativos que tienen hoy, ¿esa facturación los hace rentables, están en punto de equilibrio, o están perdiendo dinero cada mes?"</div>
-        <div class="script-note">Esta pregunta revela urgencia financiera real.</div>
-      `)}
-    </div>`;
-}
-
-// ---- INTENTOS PASADOS ----
-function renderIntentos() {
-  return `
-    <div class="stage-content">
-      ${scriptBlock('talk', 'Agotar intentos anteriores', 'Desmantelar soluciones pasadas', `
-        <div class="script-text">"Para no repetir errores, ¿qué han intentado antes para solucionar esto? ¿Agencias, cursos, comprar leads?"</div>
-      `, true)}
-
-      ${scriptBlock('talk', 'Inteligencia Competitiva', '¿Habló con la competencia?', `
-        <div class="script-text">"Y en esta búsqueda de soluciones, ¿has tenido llamadas con otras empresas similares a la nuestra recientemente?"</div>
-        <p class="script-instruction"><strong>Si dice que sí:</strong></p>
-        <div class="script-text">"¿Y qué fue lo que no te convenció de ellos para no haber cerrado ya?"</div>
-        <div class="script-note">Anota esto. Te acaba de decir exactamente qué NO hacer en tu pitch y qué objeciones tiene.</div>
-      `)}
-
-      ${scriptBlock('branch', 'Si usaron agencias en el pasado', 'Desmontar la agencia', `
-        <div class="script-text">"Ok, y cuando trabajaste con ellos... ¿implementaron algún sistema para filtrar a la gente por ingresos antes de que te llegara el lead, o te llegaba cualquiera?"</div>
-        <div class="script-note">Respuesta esperada: No.</div>
-        <div class="script-text">"¿Tenían un equipo que llamara a los leads en menos de 5 minutos para agendarlos por ti?"</div>
-        <div class="script-note">Respuesta esperada: No.</div>
-        <div class="script-text">"Entiendo. Y esa es exactamente la razón por la que falló. Estabas comprando leads, no un sistema de adquisición de pacientes."</div>
-      `)}
-
-      ${scriptBlock('branch', 'Si tienen cariño por la agencia actual', 'Romper el vínculo emocional', `
-        <div class="script-text">"Entiendo que les tienes cariño y que la relación es buena. Pero déjame preguntarte algo: si tu agencia actual pudiera resolver este problema, ¿no lo habría resuelto ya? Llevas [X meses/años] con ellos y el problema sigue ahí. A veces el cariño nos cuesta dinero."</div>
-      `)}
-    </div>`;
-}
-
-// ---- BOTTLENECK ----
-function renderBottleneck() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Paso 1: Identifica el Bottleneck Principal</p>
-
-      <div class="bottleneck-grid">
-        <div class="bottleneck-card" onclick="this.classList.toggle('selected')">
-          <div class="bottleneck-tag">[1]</div>
-          <div class="bottleneck-name">Estadio Vacío</div>
-          <div class="bottleneck-threshold">&lt; 100 leads/mes</div>
-        </div>
-        <div class="bottleneck-card" onclick="this.classList.toggle('selected')">
-          <div class="bottleneck-tag">[2]</div>
-          <div class="bottleneck-name">Hemorragia de Leads</div>
-          <div class="bottleneck-threshold">Agendamiento &lt; 12%</div>
-        </div>
-        <div class="bottleneck-card" onclick="this.classList.toggle('selected')">
-          <div class="bottleneck-tag">[3]</div>
-          <div class="bottleneck-name">Plaga del No-Show</div>
-          <div class="bottleneck-threshold">Show Rate &lt; 60%</div>
-        </div>
-        <div class="bottleneck-card" onclick="this.classList.toggle('selected')">
-          <div class="bottleneck-tag">[4]</div>
-          <div class="bottleneck-name">Brecha del Ticket</div>
-          <div class="bottleneck-threshold">Ticket &lt; $2,000</div>
-        </div>
-        <div class="bottleneck-card" onclick="this.classList.toggle('selected')">
-          <div class="bottleneck-tag">[5]</div>
-          <div class="bottleneck-name">Cierre a Ciegas</div>
-          <div class="bottleneck-threshold">Tasa cierre &lt; 40%</div>
-        </div>
-      </div>
-
-      <div class="section-divider"></div>
-      <p class="section-label">Paso 2: Script del Cost of Inaction</p>
-      <p class="section-sublabel">Ejemplo: Plaga del No-Show — adapta al bottleneck real</p>
-
-      ${scriptBlock('warn', 'El Cost of Inaction', 'El momento más importante', `
-        <div class="script-text">"Mira [Nombre], con los números que me diste, el diagnóstico es claro. Tu problema no es el marketing. Tienes [X] agendados, pero solo asiste el [Y]%. Estás perdiendo [Z] pacientes al mes que ya habían dicho que sí."</div>
-        <div class="script-text">"A tu ticket de [$], estás dejando <strong>[$Total] sobre la mesa cada mes</strong>. En 3 meses, son [$Total x 3] perdidos. Y lo peor no es el dinero, lo peor es que esto es lo que te mantiene trabajando [Horas] a la semana y te impide [Meta Operativa]. ¿Te hace sentido esto?"</div>
-        <div class="script-note">Usa los números del panel de notas. El Cost of Inaction se calcula automáticamente.</div>
-      `, true)}
-    </div>`;
-}
-
-// ---- PRECIO ----
-function renderPrecio() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Transición con Downplay</p>
-
-      ${scriptBlock('talk', 'Re-abrir la herida + Downplay', 'Justo antes del precio', `
-        <div class="script-text">"Basándome en todo lo que me contaste, lo que hacemos aquí en SacaMedi podría funcionar para tu clínica. Porque me dijiste que están perdiendo alrededor de [$Total al mes] y que eso les está generando... creo que mencionaste un poco de frustración con el equipo de ventas, ¿o no era tanto así?"</div>
-        <div class="script-note">Prospecto amplifica: "Sí, es un desastre..."</div>
-      `, true)}
-
-      ${scriptBlock('warn', 'Revelar el Precio', 'SILENCIO después de decirlo', `
-        <div class="script-text">"Entiendo. Bueno, tenemos un sistema probado para solucionar exactamente eso. Pero antes de mostrarte cómo funciona, me gusta ser súper transparente. Implementar todo este sistema, integrarlo en tu clínica y dejarlo corriendo tiene una inversión de <strong>[$X USD]</strong>."</div>
-        <div class="script-note">SILENCIO. Deja que lo asimile. Si hace una mueca o dice que es alto, haces el Tie-down:</div>
-      `)}
-
-      ${scriptBlock('talk', 'El Tie-Down del Precio', 'Si reacciona al precio', `
-        <div class="script-text">"Sé que suena a una inversión importante. Pero recuerda que hoy estás perdiendo [$Cost of Inaction] al mes por no tener esto resuelto. Si te muestro exactamente cómo nuestro sistema recupera ese dinero y hace que la inversión se pague sola, ¿te gustaría verlo?"</div>
-        <div class="script-note">Espera el "sí" antes de continuar al pitch.</div>
-      `)}
-    </div>`;
-}
-
-// ---- PITCH 5 PILARES ----
-function renderPitch() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Los 5 Pilares</p>
-      <p class="section-sublabel">Checking for Agreement — valida cada pilar con el prospecto</p>
-
-      <div class="pillar-card">
-        <div class="pillar-number">PILAR 1</div>
-        <div class="pillar-name">Paywall Pixel Protocol</div>
-        <div class="pillar-desc">"Entrenamos al algoritmo para buscar gente con tarjeta de crédito, no curiosos."</div>
-        <div class="script-instruction">Analogía: Vuelos baratos vs. Primera clase.</div>
-        <div class="pillar-cfa">"¿Ves cómo eso resuelve el problema de los leads de baja calidad que mencionaste?"</div>
-      </div>
-
-      <div class="pillar-card">
-        <div class="pillar-number">PILAR 2</div>
-        <div class="pillar-name">Doctor Brand Authority</div>
-        <div class="pillar-desc">"Posicionamos tu marca para que lleguen pre-vendidos."</div>
-        <div class="script-instruction">Analogía: Artista en la calle vs. Estadio lleno.</div>
-        <div class="pillar-cfa">"¿Tiene sentido cómo esto te separa de la competencia local?"</div>
-      </div>
-
-      <div class="pillar-card">
-        <div class="pillar-number">PILAR 3</div>
-        <div class="pillar-name">AI 360 Engine</div>
-        <div class="pillar-desc">"Automatizamos el seguimiento en menos de 5 minutos para matar el No-Show. Tu marketing debe vender antes de que tu equipo humano intervenga."</div>
-        <div class="pillar-cfa">"¿Cómo ves que eso impactaría tu tasa de asistencia actual del [X]%?"</div>
-      </div>
-
-      <div class="pillar-card">
-        <div class="pillar-number">PILAR 4</div>
-        <div class="pillar-name">Sales Training</div>
-        <div class="pillar-desc">"Entrenamos a tu equipo para cerrar tratamientos High Ticket, no evaluaciones baratas."</div>
-        <div class="pillar-cfa">"¿Estamos en la misma página con esto?"</div>
-      </div>
-
-      <div class="pillar-card">
-        <div class="pillar-number">PILAR 5</div>
-        <div class="pillar-name">Role Command Center</div>
-        <div class="pillar-desc">"Trazabilidad total. Sabrás exactamente qué anuncio trajo al paciente que pagó $3,000."</div>
-        <div class="pillar-cfa">"¿Ves el valor de tener esta claridad en tus números?"</div>
-      </div>
-    </div>`;
-}
-
-// ---- TEMPERATURE CHECK ----
-function renderTempCheck() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Elige el Temperature Check</p>
-      <p class="section-sublabel">Según el perfil del prospecto</p>
-
-      <table class="data-table">
-        <thead><tr><th>Tipo</th><th>Para quién</th><th>Script</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Alineación</strong></td><td>Cautelosos</td><td><em>"¿Sientes que estamos en la misma sintonía con lo que tu clínica necesita, o hay algo que todavía te hace ruido?"</em></td></tr>
-          <tr><td><strong>Sentido</strong></td><td>Analíticos</td><td><em>"Viendo los números y lo que te mostré, ¿sientes que esto es exactamente la pieza que te faltaba, o todavía hay algo que no te cuadra?"</em></td></tr>
-          <tr><td><strong>Escepticismo</strong></td><td>Quemados</td><td><em>"¿Te hace sentido al 100% que esto soluciona el problema, o todavía tienes duda de que te pase lo mismo que con la otra agencia?"</em></td></tr>
-          <tr><td><strong>Corazón</strong></td><td>Emocionales</td><td><em>"Si tuvieras que decidir ahora, con el corazón en la mano, ¿dirías 'vamos con todo' o lo sigues viendo como un 'tal vez'?"</em></td></tr>
-        </tbody>
-      </table>
-
-      <div class="section-divider"></div>
-
-      ${scriptBlock('warn', 'EL PASO CRÍTICO: Commitment Question', 'Haz que se venda a sí mismo', `
-        <div class="script-instruction"><strong>Si responde positivamente al check, NO pases al cobro todavía.</strong></div>
-        <div class="script-text">"¿Por qué sientes que sí? ¿Qué es lo que más te hace sentido de todo lo que vimos?"</div>
-        <div class="script-note">Deja que el prospecto explique con sus propias palabras por qué necesita tu servicio. Esto blinda el cierre.</div>
-      `, true)}
-    </div>`;
-}
-
-// ---- CIERRE ----
-function renderCierre() {
-  return `
-    <div class="stage-content">
-      ${scriptBlock('check', 'PASO 1: Intento de Cobro Directo', 'Lenguaje neutro, sin presión', `
-        <div class="script-text">"Perfecto. Basado en eso, el siguiente paso sería hacer el arreglo para empezar a tapar esa fuga de [$Cost of Inaction]. Puedes hacerlo con tarjeta de crédito o débito. ¿Cómo te gustaría proceder desde aquí?"</div>
-        <div class="script-note">Envía el link inmediatamente. Quédate en silencio mientras lo procesan. No hables. El silencio es tu aliado.</div>
-      `, true)}
-
-      <div class="section-divider"></div>
-      <p class="section-label">PASO 2: Si aparece una objeción</p>
-
-      ${scriptBlock('talk', 'Paso 2A — Pacing', 'Neutralizar la presión', `
-        <div class="script-instruction">Prospecto: "Tengo que pensarlo..." / "Es mucho dinero..."</div>
-        <div class="script-text"><strong>"Ningún problema."</strong></div>
-        <div class="script-note">Tono calmado, cero defensivo. PAUSA de 3 segundos.</div>
-      `)}
-
-      ${scriptBlock('talk', 'Paso 2B — Clarifying Question', 'No asumas la objeción', `
-        <p class="script-instruction"><strong>Si dice "es caro":</strong></p>
-        <div class="script-text">"Entiendo. Cuando dices que es caro, ¿te refieres a que es caro comparado con lo que pagan hoy por marketing, a que no tienen presupuesto para esto ahora mismo, o a otra cosa?"</div>
-        <div class="section-divider"></div>
-        <p class="script-instruction"><strong>Si dice "tengo que pensarlo":</strong></p>
-        <div class="script-text">"Totalmente. ¿Qué es específicamente lo que quieres repasar en tu mente? Así cuando hablemos, puedo tener lista la información que necesitas."</div>
-      `)}
-
-      ${scriptBlock('talk', 'Paso 2C — Aislamiento (Should vs. How)', '', `
-        <div class="script-text">"Ayúdame a entender algo: basado en lo que me dices, ¿es porque no estás seguro de que esto sea lo correcto para tu clínica? ¿O es más un tema de cómo hacerlo funcionar financieramente/logísticamente?"</div>
-      `)}
-
-      <div class="section-divider"></div>
-      <p class="section-label">PASO 3: Árbol de Objeciones</p>
-      <p class="section-sublabel">Selecciona la objeción real del prospecto</p>
-
-      <div class="decision-tree" id="objectionTree">
-        <div class="dt-question">¿Cuál es la objeción real?</div>
-        <div class="dt-options">
-          <div class="dt-option" onclick="showObjection('pensarlo')">
-            "Tengo que pensarlo"
-          </div>
-          <div class="dt-option" onclick="showObjection('caro')">
-            "Es muy caro"
-          </div>
-          <div class="dt-option" onclick="showObjection('socio')">
-            "Consultar con socio/esposo"
-          </div>
-        </div>
-
-        <div class="dt-result" id="obj-pensarlo">
-          <p class="section-label" style="color:var(--yellow)">Objeción: "Tengo que pensarlo" — Urgencia</p>
-          <div class="script-text">"Lo entiendo. Y no quiero que tomes una decisión apresurada. Pero déjame preguntarte algo: ¿qué información nueva vas a tener mañana que no tengas hoy? Porque el problema que diagnosticamos — esos [$Cost of Inaction] que se pierden cada mes — ese no se pausa mientras lo piensas. Cada semana que pasa es otra semana de [X pacientes perdidos]."</div>
-          <div class="dt-back" onclick="resetObjection()">&#8592; Ver otras objeciones</div>
-        </div>
-
-        <div class="dt-result" id="obj-caro">
-          <p class="section-label" style="color:var(--yellow)">Objeción: "Es muy caro" / "No tengo presupuesto"</p>
-          <div class="script-text">"Entiendo. Y si la inversión fuera de $500, ¿lo harías?"</div>
-          <div class="script-note">Si dice sí → el problema no es el precio, es el valor percibido. Si dice no → hay otra objeción escondida.</div>
-          <div class="script-text">"Mira, entiendo que [$X USD] es una inversión importante. Pero hoy estás perdiendo [$Cost of Inaction] al mes. En 3 meses, eso son [$Total]. La pregunta no es si puedes pagar esto. La pregunta es si puedes seguir pagando el costo de no tenerlo."</div>
-          <div class="dt-back" onclick="resetObjection()">&#8592; Ver otras objeciones</div>
-        </div>
-
-        <div class="dt-result" id="obj-socio">
-          <p class="section-label" style="color:var(--yellow)">Objeción: "Tengo que hablar con mi socio/esposo/contador"</p>
-          <div class="script-text">"Totalmente entendible. Y para que cuando hables con [Socio] puedas presentarle esto con toda la información: ¿cuál crees que va a ser su principal preocupación? ¿El precio, el riesgo, o el tiempo?"</div>
-          <div class="script-text">"Si [Socio] te pregunta '¿y si no funciona?', ¿qué le dirías basado en lo que vimos hoy?"</div>
-          <div class="dt-back" onclick="resetObjection()">&#8592; Ver otras objeciones</div>
-        </div>
-      </div>
-
-      ${scriptBlock('talk', 'LA SUPPOSE QUESTION', 'Después de resolver la objeción', `
-        <div class="script-text">"Supongamos que pudiéramos resolver eso contigo. Sé que no está resuelto ahora, pero imaginemos que sí. ¿Hay algún otro tema que quisieras ver resuelto antes de avanzar?"</div>
-        <div class="script-note">Si dice que no, vuelve al intento de cobro.</div>
-      `)}
-
-      <div class="section-divider"></div>
-      <p class="section-label">PASO 4: Cierre por Depósito</p>
-      <p class="section-sublabel">Cuando está 100% vendido pero hay problema logístico real</p>
-
-      ${scriptBlock('check', 'Script de Depósito', '', `
-        <div class="script-text">"Genial que estés 100% a bordo. Esto pasa todo el tiempo, es súper normal. Lo que hacemos en estos casos es tomar un depósito para asegurar tu lugar."</div>
-        <div class="script-text">"Es 100% reembolsable, así que no te amarra. Pero nos permite arrancar la configuración en el back-end, darte acceso a los primeros materiales, y que cuando los fondos estén listos el [Día], empecemos a correr el día 1 sin perder tiempo."</div>
-        <div class="script-text">"El depósito es de $1,000 USD. ¿Te lo envío al correo que tenemos?"</div>
-      `)}
-
-      <p class="script-instruction"><strong>Escalera de Depósito (si $1,000 no es posible):</strong></p>
-      <div class="deposit-ladder">
-        <div class="deposit-step">
-          <div class="deposit-step-num">1</div>
-          <div class="deposit-amount">$1,000</div>
-          <div class="deposit-script">Intento inicial</div>
-        </div>
-        <div class="deposit-step">
-          <div class="deposit-step-num">2</div>
-          <div class="deposit-amount">$500</div>
-          <div class="deposit-script"><em>"¿Y si hacemos $500 ahora y el resto el [Día]?"</em></div>
-        </div>
-        <div class="deposit-step">
-          <div class="deposit-step-num">3</div>
-          <div class="deposit-amount">$250</div>
-          <div class="deposit-script"><em>"Mira, con $250 aseguramos tu cupo y arrancamos la configuración."</em></div>
-        </div>
-      </div>
-
-      <div class="section-divider"></div>
-      <p class="section-label">PASO 5: Detección de Resistencia</p>
-
-      <div class="resistance-grid">
-        <div class="resistance-card green-level">
-          <div class="resistance-label">VERDE</div>
-          <div class="resistance-signal">Objeción lógica, tono abierto, hace preguntas</div>
-          <div class="resistance-action">Sigue empujando. Resuelve la objeción.</div>
-        </div>
-        <div class="resistance-card yellow-level">
-          <div class="resistance-label">AMARILLO</div>
-          <div class="resistance-signal">Repite la misma objeción 2 veces, tono más cortante</div>
-          <div class="resistance-action">Un intento más con Pacing, luego ofrece depósito.</div>
-        </div>
-        <div class="resistance-card red-level">
-          <div class="resistance-label">ROJO</div>
-          <div class="resistance-signal">"No me presiones", silencios largos, tono defensivo</div>
-          <div class="resistance-action"><strong>PARA.</strong> Pasa al Protocolo de Segunda Llamada.</div>
-        </div>
-      </div>
-
-      <div class="section-divider"></div>
-      <p class="section-label">PASO 6: Protocolo de Segunda Llamada Blindada</p>
-
-      ${scriptBlock('talk', '6A. Transición — Soltar sin perder el frame', '', `
-        <div class="script-text">"Sabes qué, [Nombre]... De hecho, no quiero que tomes una decisión ahora. Quiero que lo pienses bien, que hables con [Socio/Contador], y que te asegures de que es lo correcto. Porque si entras, quiero que entres 100% convencido, no a medias."</div>
-      `)}
-
-      ${scriptBlock('talk', '6B. Agendamiento Blindado', 'Máximo 24-48h', `
-        <div class="script-text">"Hagamos esto: agendemos una llamada corta de 15 minutos mañana. No para repetir nada de lo que vimos hoy, sino para resolver las últimas dudas que te queden y definir si avanzamos o no. Tengo espacio a las [Hora A] o a las [Hora B]. ¿Cuál te queda mejor?"</div>
-      `)}
-
-      ${scriptBlock('check', '6C. Blindaje Anti-Ghosting (3 Capas)', '', `
-        <div class="checklist">
-          <div class="checklist-item" onclick="this.classList.toggle('checked')"><div class="checklist-box">&#10003;</div><span class="checklist-label"><strong>1. Compromiso verbal:</strong> "Y oye, a menos que te atropelle un bus, ¿me avisas si surge algo y tienes que reagendar?"</span></div>
-          <div class="checklist-item" onclick="this.classList.toggle('checked')"><div class="checklist-box">&#10003;</div><span class="checklist-label"><strong>2. La Tarea:</strong> "Te voy a enviar un material corto de 5 min sobre [Su Bottleneck]. ¿Podrás revisarlo antes de mañana?"</span></div>
-          <div class="checklist-item" onclick="this.classList.toggle('checked')"><div class="checklist-box">&#10003;</div><span class="checklist-label"><strong>3. Contacto Personal:</strong> "¿Este es tu WhatsApp personal? Te voy a mandar un mensaje ahora para que tengas mi contacto directo."</span></div>
-        </div>
-      `)}
-
-      ${scriptBlock('talk', '6D. Reconstrucción de Rapport', '2-3 min antes de colgar', `
-        <div class="script-text">"Oye, antes de colgar, cuéntame: ¿cómo va todo con [algo personal que mencionó en la llamada]?"</div>
-        <div class="script-note">Small talk genuino. Demuestra que te importa la persona, no solo la venta.</div>
-      `)}
-
-      ${scriptBlock('note', '6E. La Segunda Llamada en Sí', '10-15 min máximo', `
-        <div class="script-instruction"><strong>Duración:</strong> 10-15 minutos máximo. No re-pitchees.</div>
-        <div class="script-instruction"><strong>Apertura:</strong> "¿Pudiste revisar el material que te envié?"</div>
-        <div class="script-instruction"><strong>Directo al grano:</strong> "¿Pudiste hablar con [Socio/Contador]? ¿Qué te dijo?"</div>
-        <div class="script-instruction"><strong>Si dice "todavía no estoy seguro":</strong></div>
-        <div class="script-text">"¿Hay algo que yo pueda hacer o decir que te ayude a tomar esta decisión, o simplemente no es el momento correcto?"</div>
-      `)}
-    </div>`;
-}
-
-// ---- FOLLOW-UP + EMERGENCIES ----
-function renderFollowup() {
-  return `
-    <div class="stage-content">
-      <p class="section-label">Gestión del Pipeline</p>
-      <p class="section-sublabel">30-40% de los cierres vienen del follow-up. El lead NO está muerto.</p>
-
-      <div class="pipeline-grid">
-        <div class="pipeline-card">
-          <div class="pipeline-tag">HOT LIST</div>
-          <div class="pipeline-desc">Dijo "sí" pero no pagó.</div>
-          <div class="pipeline-freq">Follow-up cada 24h por 7-10 días</div>
-        </div>
-        <div class="pipeline-card">
-          <div class="pipeline-tag">WARM LIST</div>
-          <div class="pipeline-desc">Mostró interés pero tiene objeción real.</div>
-          <div class="pipeline-freq">Follow-up cada 48-72h por 30 días</div>
-        </div>
-        <div class="pipeline-card">
-          <div class="pipeline-tag">COLD / NURTURE</div>
-          <div class="pipeline-desc">No respondió después de 10 días.</div>
-          <div class="pipeline-freq">Campañas 2x/mes</div>
-        </div>
-      </div>
-
-      <div class="section-divider"></div>
-      <p class="section-label">Tipos de Follow-Up</p>
-      <p class="section-sublabel">Personalizado, NUNCA automatizado</p>
-
-      ${scriptBlock('talk', 'Basado en Dolor (Día 1-2)', '', `
-        <div class="script-text">"Estaba pensando en lo que me dijiste de que estás perdiendo [$X] al mes. Creo que tenemos una forma de empezar a tapar esa fuga esta misma semana. ¿Tienes 5 min hoy?"</div>
-      `)}
-      ${scriptBlock('talk', 'Curiosidad (Día 3-4)', '', `
-        <div class="script-text">"Te quiero compartir algo rápido que creo que te va a interesar. ¿Puedes hablar 5 min hoy?"</div>
-      `)}
-      ${scriptBlock('talk', 'Re-Oferta (Día 5-7)', '', `
-        <div class="script-text">"Estuve hablando con el equipo. Creo que hay una forma de [resolver su objeción específica]. ¿Tienes 5 min?"</div>
-      `)}
-      ${scriptBlock('warn', 'Red Flags (Día 7-10)', '', `
-        <div class="script-text">"Avísame — me preocupa cuando clientes potenciales dejan de responder. Si vamos a escalar tu clínica juntos, te necesito 100% a bordo."</div>
-      `)}
-      ${scriptBlock('talk', 'Humorístico (Día 10+)', '', `
-        <div class="script-text">"¿Sigues vivo? No te voy a perseguir, pero quería asegurarme de que no te atropelló el bus del que hablamos."</div>
-      `)}
-
-      ${scriptBlock('note', 'Cierre del Pipeline — Cuándo soltar', 'Después de 10 días sin respuesta', `
-        <div class="script-text">"[Nombre], entiendo que no es el momento. Voy a liberar tu espacio para otro cliente. Si en algún momento quieres retomar esto, tienes mi contacto directo. Te deseo lo mejor con la clínica."</div>
-      `)}
-
-      <div class="section-divider"></div>
-      <p class="section-label" style="color:var(--red)">NOTAS DE EMERGENCIA</p>
-
-      <div class="emergency-block">
-        <div class="emergency-title">"No me pongas la soga al cuello"</div>
-        <div class="script-text">"Tienes toda la razón, y no es mi intención. Mira, yo no gano nada metiéndote en algo que no es para ti. Solo quiero asegurarme de que si decides hacerlo, lo hagas con toda la información. Y si decides que no, cero problema."</div>
-      </div>
-
-      <div class="emergency-block">
-        <div class="emergency-title">Se está acabando el tiempo (ya diste el precio)</div>
-        <div class="script-text">"[Nombre], sé que tienes paciente ahora. Ya conoces la inversión y viste cómo solucionamos la pérdida de [$X]. Hagamos esto: te envío el link ahora, y si decides avanzar en los próximos 30 minutos, arrancamos hoy. Si no, agendamos 15 min mañana para cerrar. ¿Te parece?"</div>
-      </div>
-
-      <div class="emergency-block">
-        <div class="emergency-title">El prospecto divaga y se sale del tema</div>
-        <div class="script-text">"Eso es súper interesante, [Nombre]. Déjame anotarlo porque quiero volver a eso. Pero para aprovechar el tiempo, volvamos a [tema]. ¿Ok?"</div>
-      </div>
-
-      <div class="emergency-block">
-        <div class="emergency-title">Si pide descuento</div>
-        <div class="script-text">"No manejamos descuentos porque el sistema ya está diseñado para pagarse solo con los resultados. Lo que sí podemos hacer es estructurar el pago de una forma que te funcione mejor. ¿Eso te ayudaría?"</div>
-      </div>
-
-      <div class="emergency-block">
-        <div class="emergency-title">Si dice "voy a investigar otras opciones"</div>
-        <div class="script-text">"Me parece perfecto. De hecho, te lo recomiendo. Pero cuando investigues, pregúntales esto: ¿incluyen [Pilar 1]? ¿Incluyen [Pilar 2]? ¿Incluyen [Pilar 3]? Si la respuesta es no a cualquiera de esas, ya sabes por qué estás aquí."</div>
-      </div>
-    </div>`;
-}
-
-// ========== OBJECTION TREE ==========
-function showObjection(key) {
-  document.querySelectorAll('.dt-option').forEach(o => o.classList.remove('selected'));
-  document.querySelectorAll('.dt-result').forEach(r => r.classList.remove('visible'));
-  event.target.classList.add('selected');
-  document.getElementById('obj-' + key).classList.add('visible');
-}
-
-function resetObjection() {
-  document.querySelectorAll('.dt-option').forEach(o => o.classList.remove('selected'));
-  document.querySelectorAll('.dt-result').forEach(r => r.classList.remove('visible'));
-}
-
-// ========== NOTES ==========
-function toggleNotes() {
-  document.getElementById('notesPanel').classList.toggle('open');
-}
-
-function saveNotes() {
-  const fields = ['noteNombre','noteSetter','noteDM','noteFacturacion','noteTicket','noteMeta',
-    'noteLeads','noteAgendados','noteShow','noteCierran','noteAds',
-    'noteVision','noteDolor','noteIntentos','noteBottleneck','noteObjeciones'];
-  const data = {};
-  fields.forEach(f => data[f] = document.getElementById(f).value);
-  localStorage.setItem('sacamedi_notes', JSON.stringify(data));
-}
-
-function loadNotes() {
-  try {
-    const data = JSON.parse(localStorage.getItem('sacamedi_notes') || '{}');
-    Object.keys(data).forEach(k => {
-      const el = document.getElementById(k);
-      if (el) el.value = data[k];
-    });
-    calcMetrics();
-  } catch(e) {}
-}
-
-function calcMetrics() {
-  saveNotes();
-  const leads = parseFloat(document.getElementById('noteLeads').value) || 0;
-  const agendados = parseFloat(document.getElementById('noteAgendados').value) || 0;
-  const show = parseFloat(document.getElementById('noteShow').value) || 0;
-  const cierran = parseFloat(document.getElementById('noteCierran').value) || 0;
-  const ads = parseFloat(document.getElementById('noteAds').value) || 0;
-  const ticket = parseFloat(document.getElementById('noteTicket').value) || 0;
-
-  const tasaAgendamiento = leads > 0 ? ((agendados / leads) * 100).toFixed(1) + '%' : '—';
-  const showRate = agendados > 0 ? ((show / agendados) * 100).toFixed(1) + '%' : '—';
-  const tasaCierre = show > 0 ? ((cierran / show) * 100).toFixed(1) + '%' : '—';
-  const cpl = leads > 0 ? '$' + (ads / leads).toFixed(0) : '—';
-  const cpp = cierran > 0 ? '$' + (ads / cierran).toFixed(0) : '—';
-
-  const noShows = agendados - show;
-  const lostMonth = noShows * ticket;
-  const lost3 = lostMonth * 3;
-
-  document.getElementById('calcAgendamiento').textContent = tasaAgendamiento;
-  document.getElementById('calcShowRate').textContent = showRate;
-  document.getElementById('calcCierre').textContent = tasaCierre;
-  document.getElementById('calcCPL').textContent = cpl;
-  document.getElementById('calcCPP').textContent = cpp;
-
-  document.getElementById('calcNoShows').textContent = noShows > 0 ? noShows + ' pacientes' : '—';
-  document.getElementById('calcLostMonth').textContent = lostMonth > 0 ? '$' + lostMonth.toLocaleString() : '—';
-  document.getElementById('calcLost3').textContent = lost3 > 0 ? '$' + lost3.toLocaleString() : '—';
-  document.getElementById('calcCOI').textContent = lostMonth > 0 ? '$' + lostMonth.toLocaleString() : '—';
-}
-
-// ========== KEYBOARD NAV ==========
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight' && currentStage < STAGES.length - 1) {
-    goToStage(currentStage + 1);
-  } else if (e.key === 'ArrowLeft' && currentStage > 0) {
-    goToStage(currentStage - 1);
-  } else if (e.key === ' ' && !e.target.matches('input, textarea')) {
-    e.preventDefault();
-    toggleTimer();
-  } else if (e.key === 'n' && !e.target.matches('input, textarea')) {
-    toggleNotes();
-  }
-});
-
-// ========== INIT ==========
-buildNav();
-renderStage();
-loadNotes();
+// Keyboard
+document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea'))return;if(e.key==='ArrowRight'&&cur<STAGES.length-1)goTo(cur+1);else if(e.key==='ArrowLeft'&&cur>0)goTo(cur-1);else if(e.key===' '){e.preventDefault();toggleTimer();}});
+
+// Init
+buildNav();loadNotes();render();
 </script>
 </body>
 </html>
