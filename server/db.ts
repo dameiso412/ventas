@@ -30,18 +30,37 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _sql: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const client = postgres(process.env.DATABASE_URL, { prepare: false });
-      _db = drizzle(client);
+      _sql = postgres(process.env.DATABASE_URL, {
+        prepare: false,
+        connect_timeout: 10,
+        idle_timeout: 20,
+        max_lifetime: 60 * 30,
+      });
+      _db = drizzle(_sql);
+      // Test the connection immediately
+      await _sql`SELECT 1`;
+      console.log("[Database] Connected successfully");
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _sql = null;
     }
   }
   return _db;
+}
+
+/** Force reconnect (e.g. after connection failure) */
+export async function resetDb() {
+  if (_sql) {
+    try { await _sql.end(); } catch {}
+  }
+  _db = null;
+  _sql = null;
 }
 
 // ==================== USERS ====================
