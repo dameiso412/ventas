@@ -1,0 +1,378 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Sacamedi Dark Theme - Purple Futuristic */
+/* Palette: #0A0A0F (bg), #1E1245 (deep purple), #2D1B69 (mid purple), #A855F7 (bright purple), #F59E0B (gold accent) */
+:root {
+  --radius: 0.625rem;
+  /* Deep dark background */
+  --background: oklch(0.13 0.02 285);
+  --foreground: oklch(0.93 0.01 285);
+  /* Card: slightly lighter than bg */
+  --card: oklch(0.17 0.03 285);
+  --card-foreground: oklch(0.93 0.01 285);
+  /* Popover */
+  --popover: oklch(0.17 0.03 285);
+  --popover-foreground: oklch(0.93 0.01 285);
+  /* Primary: bright purple #A855F7 */
+  --primary: oklch(0.65 0.25 295);
+  --primary-foreground: oklch(0.98 0 0);
+  /* Secondary: deep purple */
+  --secondary: oklch(0.22 0.06 285);
+  --secondary-foreground: oklch(0.85 0.01 285);
+  /* Muted */
+  --muted: oklch(0.20 0.04 285);
+  --muted-foreground: oklch(0.60 0.03 285);
+  /* Accent: mid purple */
+  --accent: oklch(0.25 0.08 285);
+  --accent-foreground: oklch(0.93 0.01 285);
+  /* Destructive */
+  --destructive: oklch(0.60 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  /* Borders */
+  --border: oklch(0.28 0.06 285);
+  --input: oklch(0.25 0.05 285);
+  --ring: oklch(0.65 0.25 295);
+  /* Charts - purple gradient + gold */
+  --chart-1: oklch(0.65 0.25 295);
+  --chart-2: oklch(0.55 0.20 295);
+  --chart-3: oklch(0.75 0.18 85);
+  --chart-4: oklch(0.45 0.15 295);
+  --chart-5: oklch(0.70 0.22 295);
+  /* Sidebar */
+  --sidebar: oklch(0.14 0.025 285);
+  --sidebar-foreground: oklch(0.85 0.01 285);
+  --sidebar-primary: oklch(0.65 0.25 295);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.22 0.06 285);
+  --sidebar-accent-foreground: oklch(0.93 0.01 285);
+  --sidebar-border: oklch(0.28 0.06 285);
+  --sidebar-ring: oklch(0.65 0.25 295);
+}
+
+/* Sacamedi Light Theme - Professional with Purple Branding & Strong Contrast */
+/* Palette: #F8F7FC (bg), #FFFFFF (card), #7C3AED (deep purple), #A855F7 (bright purple) */
+.light {
+  --radius: 0.625rem;
+  /* Soft lavender-tinted background - NOT pure white */
+  --background: oklch(0.975 0.008 285);
+  --foreground: oklch(0.13 0.04 285);
+  /* Card: white with clear separation from background */
+  --card: oklch(0.995 0.002 285);
+  --card-foreground: oklch(0.13 0.04 285);
+  /* Popover */
+  --popover: oklch(0.995 0.002 285);
+  --popover-foreground: oklch(0.13 0.04 285);
+  /* Primary: deep purple for better contrast on light bg */
+  --primary: oklch(0.50 0.25 295);
+  --primary-foreground: oklch(0.98 0 0);
+  /* Secondary: light purple tint with visible contrast */
+  --secondary: oklch(0.93 0.03 285);
+  --secondary-foreground: oklch(0.20 0.06 285);
+  /* Muted: visible but subtle */
+  --muted: oklch(0.94 0.015 285);
+  --muted-foreground: oklch(0.40 0.04 285);
+  /* Accent: noticeable purple tint */
+  --accent: oklch(0.91 0.05 285);
+  --accent-foreground: oklch(0.15 0.06 285);
+  /* Destructive */
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  /* Borders - clearly visible with purple undertone */
+  --border: oklch(0.86 0.02 285);
+  --input: oklch(0.88 0.02 285);
+  --ring: oklch(0.50 0.25 295);
+  /* Charts */
+  --chart-1: oklch(0.50 0.25 295);
+  --chart-2: oklch(0.42 0.20 295);
+  --chart-3: oklch(0.65 0.18 85);
+  --chart-4: oklch(0.58 0.15 295);
+  --chart-5: oklch(0.55 0.22 295);
+  /* Sidebar: clean with clear border */
+  --sidebar: oklch(0.985 0.006 285);
+  --sidebar-foreground: oklch(0.18 0.04 285);
+  --sidebar-primary: oklch(0.50 0.25 295);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.93 0.04 285);
+  --sidebar-accent-foreground: oklch(0.15 0.06 285);
+  --sidebar-border: oklch(0.88 0.02 285);
+  --sidebar-ring: oklch(0.50 0.25 295);
+}
+
+.dark {
+  --radius: 0.625rem;
+  --background: oklch(0.13 0.02 285);
+  --foreground: oklch(0.93 0.01 285);
+  --card: oklch(0.17 0.03 285);
+  --card-foreground: oklch(0.93 0.01 285);
+  --popover: oklch(0.17 0.03 285);
+  --popover-foreground: oklch(0.93 0.01 285);
+  --primary: oklch(0.65 0.25 295);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.22 0.06 285);
+  --secondary-foreground: oklch(0.85 0.01 285);
+  --muted: oklch(0.20 0.04 285);
+  --muted-foreground: oklch(0.60 0.03 285);
+  --accent: oklch(0.25 0.08 285);
+  --accent-foreground: oklch(0.93 0.01 285);
+  --destructive: oklch(0.60 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.28 0.06 285);
+  --input: oklch(0.25 0.05 285);
+  --ring: oklch(0.65 0.25 295);
+  --chart-1: oklch(0.65 0.25 295);
+  --chart-2: oklch(0.55 0.20 295);
+  --chart-3: oklch(0.75 0.18 85);
+  --chart-4: oklch(0.45 0.15 295);
+  --chart-5: oklch(0.70 0.22 295);
+  --sidebar: oklch(0.14 0.025 285);
+  --sidebar-foreground: oklch(0.85 0.01 285);
+  --sidebar-primary: oklch(0.65 0.25 295);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.22 0.06 285);
+  --sidebar-accent-foreground: oklch(0.93 0.01 285);
+  --sidebar-border: oklch(0.28 0.06 285);
+  --sidebar-ring: oklch(0.65 0.25 295);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+      max-width: 1440px;
+    }
+  }
+}
+
+/* Sacamedi custom utilities */
+.gradient-purple {
+  background: linear-gradient(135deg, #1E1245 0%, #2D1B69 50%, #A855F7 100%);
+}
+
+.light .gradient-purple {
+  background: linear-gradient(135deg, #EDE9FE 0%, #DDD6FE 50%, #A855F7 100%);
+}
+
+.text-gradient-purple {
+  background: linear-gradient(135deg, #A855F7 0%, #C084FC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.light .text-gradient-purple {
+  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.15), 0 0 40px rgba(168, 85, 247, 0.05);
+}
+
+.light .glow-purple {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.1), 0 0 40px rgba(124, 58, 237, 0.03);
+}
+
+/* Light theme card elevation - stronger shadow for clear separation */
+.light .card,
+.light [data-slot="card"],
+.light .bg-card {
+  box-shadow: 0 1px 3px rgba(124, 58, 237, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+}
+
+/* Light theme table styling */
+.light table thead {
+  background-color: rgba(124, 58, 237, 0.04);
+}
+
+.light table thead th {
+  color: #4c1d95;
+  font-weight: 600;
+}
+
+.light table tbody tr {
+  border-bottom: 1px solid rgba(124, 58, 237, 0.06);
+}
+
+.light table tbody tr:hover {
+  background-color: rgba(124, 58, 237, 0.03);
+}
+
+/* Light theme sidebar active item */
+.light [data-active="true"] {
+  background-color: rgba(124, 58, 237, 0.08) !important;
+}
+
+.score-hot { background-color: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #ef4444; }
+.score-warm { background-color: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.4); color: #f97316; }
+.score-tibio { background-color: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4); color: #f59e0b; }
+.score-frio { background-color: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.4); color: #3b82f6; }
+
+/* Light theme: darken score colors for contrast on light bg */
+.light .score-hot { background-color: rgba(239, 68, 68, 0.1); border-color: rgba(220, 38, 38, 0.3); color: #dc2626; }
+.light .score-warm { background-color: rgba(249, 115, 22, 0.1); border-color: rgba(234, 88, 12, 0.3); color: #ea580c; }
+.light .score-tibio { background-color: rgba(245, 158, 11, 0.1); border-color: rgba(217, 119, 6, 0.3); color: #d97706; }
+.light .score-frio { background-color: rgba(59, 130, 246, 0.1); border-color: rgba(37, 99, 235, 0.3); color: #2563eb; }
+
+/* Light theme input fields */
+.light input,
+.light select,
+.light textarea {
+  border-color: rgba(124, 58, 237, 0.15);
+}
+
+.light input:focus,
+.light select:focus,
+.light textarea:focus {
+  border-color: rgba(124, 58, 237, 0.4);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1);
+}
+
+/* ===== Light theme: darken -400 accent colors for readability ===== */
+/* Green */
+.light .text-green-400  { color: #15803d !important; } /* green-700 */
+.light .text-green-500  { color: #15803d !important; }
+.light .bg-green-400    { background-color: #22c55e !important; }
+/* Emerald */
+.light .text-emerald-400 { color: #047857 !important; } /* emerald-700 */
+.light .text-emerald-500 { color: #047857 !important; }
+.light .bg-emerald-400   { background-color: #10b981 !important; }
+/* Amber / Gold */
+.light .text-amber-400  { color: #b45309 !important; } /* amber-700 */
+.light .text-amber-500  { color: #b45309 !important; }
+.light .bg-amber-400    { background-color: #f59e0b !important; }
+/* Red */
+.light .text-red-400    { color: #b91c1c !important; } /* red-700 */
+.light .text-red-500    { color: #b91c1c !important; }
+.light .bg-red-400      { background-color: #ef4444 !important; }
+/* Blue */
+.light .text-blue-400   { color: #1d4ed8 !important; } /* blue-700 */
+.light .text-blue-500   { color: #1d4ed8 !important; }
+.light .bg-blue-400     { background-color: #3b82f6 !important; }
+/* Orange */
+.light .text-orange-400 { color: #c2410c !important; } /* orange-700 */
+.light .text-orange-500 { color: #c2410c !important; }
+/* Violet / Purple */
+.light .text-violet-400 { color: #6d28d9 !important; } /* violet-700 */
+
+/* Light theme: strengthen badge/indicator backgrounds */
+.light .bg-green-500\/5   { background-color: rgba(21, 128, 61, 0.06) !important; }
+.light .bg-green-500\/10  { background-color: rgba(21, 128, 61, 0.10) !important; }
+.light .bg-green-500\/20  { background-color: rgba(21, 128, 61, 0.12) !important; }
+.light .bg-emerald-500\/5  { background-color: rgba(4, 120, 87, 0.06) !important; }
+.light .bg-emerald-500\/10 { background-color: rgba(4, 120, 87, 0.10) !important; }
+.light .bg-emerald-500\/20 { background-color: rgba(4, 120, 87, 0.12) !important; }
+.light .bg-amber-500\/5   { background-color: rgba(180, 83, 9, 0.06) !important; }
+.light .bg-amber-500\/10  { background-color: rgba(180, 83, 9, 0.10) !important; }
+.light .bg-amber-500\/20  { background-color: rgba(180, 83, 9, 0.12) !important; }
+.light .bg-red-500\/5     { background-color: rgba(185, 28, 28, 0.06) !important; }
+.light .bg-red-500\/10    { background-color: rgba(185, 28, 28, 0.10) !important; }
+.light .bg-red-500\/20    { background-color: rgba(185, 28, 28, 0.12) !important; }
+.light .bg-blue-500\/5    { background-color: rgba(29, 78, 216, 0.06) !important; }
+.light .bg-blue-500\/10   { background-color: rgba(29, 78, 216, 0.10) !important; }
+.light .bg-blue-500\/20   { background-color: rgba(29, 78, 216, 0.12) !important; }
+.light .bg-orange-500\/5  { background-color: rgba(194, 65, 12, 0.06) !important; }
+.light .bg-orange-500\/10 { background-color: rgba(194, 65, 12, 0.10) !important; }
+.light .bg-orange-500\/20 { background-color: rgba(194, 65, 12, 0.12) !important; }
+.light .bg-violet-500\/5  { background-color: rgba(109, 40, 217, 0.06) !important; }
+.light .bg-primary\/20    { background-color: rgba(124, 58, 237, 0.12) !important; }
+
+/* Light theme: strengthen border colors for badges */
+.light .border-green-500\/30,
+.light .border-green-500\/40 { border-color: rgba(21, 128, 61, 0.25) !important; }
+.light .border-emerald-500\/30,
+.light .border-emerald-400\/30 { border-color: rgba(4, 120, 87, 0.25) !important; }
+.light .border-amber-500\/30,
+.light .border-amber-500\/40 { border-color: rgba(180, 83, 9, 0.25) !important; }
+.light .border-red-500\/30,
+.light .border-red-500\/40 { border-color: rgba(185, 28, 28, 0.25) !important; }
+.light .border-blue-500\/30,
+.light .border-blue-500\/40 { border-color: rgba(29, 78, 216, 0.25) !important; }
+.light .border-orange-500\/30 { border-color: rgba(194, 65, 12, 0.25) !important; }
