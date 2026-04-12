@@ -65,7 +65,8 @@ async function startServer() {
   }
 
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    console.log(`[SacaMedi CRM] Server running on http://localhost:${port}/`);
+    console.log(`[SacaMedi CRM] Build: 2026-04-12-v2`);
     // Start the Meta Ads cron sync scheduler
     startCronSync();
   });
