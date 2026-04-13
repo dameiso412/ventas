@@ -13,7 +13,7 @@ import { es } from "date-fns/locale";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Edit2, Trash2, ExternalLink, User, Phone, Star, Target, DollarSign, ChevronRight, ChevronDown, Eye, Clock, CheckCircle2, Headphones, Flame, AlertTriangle, PhoneCall, MessageSquare, Mail, Instagram, MoreHorizontal, Send, MessageCircle, Megaphone, CalendarCheck, ArrowRightLeft, UserCheck, Zap, Calendar } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, ExternalLink, User, Phone, Star, Target, DollarSign, ChevronRight, ChevronDown, Eye, Clock, CheckCircle2, Headphones, Flame, AlertTriangle, PhoneCall, MessageSquare, Mail, Instagram, MoreHorizontal, Send, MessageCircle, Megaphone, CalendarCheck, ArrowRightLeft, UserCheck, Zap, Calendar, List, LayoutGrid } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,6 +21,8 @@ import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
 import { ProspectProfile } from "@/components/ProspectProfile";
+import { PipelineBoard } from "@/components/PipelineBoard";
+import { ScoreBadge, OutcomeBadge, ContactoBadge, EstadoLeadBadge } from "@/components/LeadBadges";
 import { calculateBusinessHours } from "@shared/businessHours";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -51,25 +53,6 @@ const CANAL_ICONS: Record<string, typeof Phone> = {
   OTRO: MoreHorizontal,
 };
 
-function ScoreBadge({ label }: { label: string | null }) {
-  if (!label) return <Badge variant="outline" className="text-xs">Sin score</Badge>;
-  const cls = label === "HOT" ? "score-hot" : label === "WARM" ? "score-warm" : label === "TIBIO" ? "score-tibio" : "score-frio";
-  return <Badge className={`${cls} border text-xs font-semibold`}>{label}</Badge>;
-}
-
-function OutcomeBadge({ outcome }: { outcome: string | null }) {
-  if (!outcome || outcome === "PENDIENTE") return <Badge variant="outline" className="text-xs">Pendiente</Badge>;
-  if (outcome === "VENTA") return <Badge className="bg-green-500/20 text-green-400 border-green-500/40 text-xs">Venta</Badge>;
-  if (outcome === "PERDIDA") return <Badge className="bg-red-500/20 text-red-400 border-red-500/40 text-xs">Perdida</Badge>;
-  return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/40 text-xs">Seguimiento</Badge>;
-}
-
-function ContactoBadge({ resultado }: { resultado: string | null }) {
-  if (!resultado || resultado === "PENDIENTE") return <span className="text-muted-foreground text-xs">Pendiente</span>;
-  if (resultado === "CONTESTÓ") return <span className="text-green-400 text-xs font-medium">Contestó</span>;
-  return <span className="text-red-400 text-xs font-medium">{resultado}</span>;
-}
-
 // Pipeline step indicator
 const PIPELINE_STEPS = [
   { key: "entrada", label: "Entrada", icon: User, color: "text-blue-400", bg: "bg-blue-500/20", border: "border-blue-500/40" },
@@ -81,18 +64,11 @@ const PIPELINE_STEPS = [
 
 const ESTADOS_LEAD = ["NUEVO", "CONTACTADO", "CALIFICADO", "DESCARTADO", "CONVERTIDO_AGENDA"] as const;
 
-function EstadoLeadBadge({ estado }: { estado: string | null }) {
-  if (!estado || estado === "NUEVO") return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/40 text-[10px]">Nuevo</Badge>;
-  if (estado === "CONTACTADO") return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/40 text-[10px]">Contactado</Badge>;
-  if (estado === "CALIFICADO") return <Badge className="bg-green-500/20 text-green-400 border-green-500/40 text-[10px]">Calificado</Badge>;
-  if (estado === "DESCARTADO") return <Badge className="bg-red-500/20 text-red-400 border-red-500/40 text-[10px]">Descartado</Badge>;
-  if (estado === "CONVERTIDO_AGENDA") return <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/40 text-[10px]">Convertido</Badge>;
-  return <Badge variant="outline" className="text-[10px]">{estado}</Badge>;
-}
-
 export default function Citas() {
   // View toggle: AGENDAS (original) vs LEADS (dinero gratis)
   const [vista, setVista] = useState<"AGENDAS" | "LEADS">("AGENDAS");
+  // View mode: lista (cards) vs pipeline (kanban)
+  const [viewMode, setViewMode] = useState<"lista" | "pipeline">("lista");
   // Sub-filter for AGENDAS: upcoming vs past appointments
   const [timeFilter, setTimeFilter] = useState<"proximas" | "pasadas">("proximas");
   const [mes, setMes] = useState<string>("all");
@@ -334,6 +310,31 @@ export default function Citas() {
                 )}
               </button>
             </div>
+            {/* View Mode Toggle: Lista / Pipeline */}
+            <div className="flex items-center bg-muted/30 rounded-lg p-1 border border-border/50">
+              <button
+                onClick={() => setViewMode("lista")}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  viewMode === "lista"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Vista lista"
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode("pipeline")}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  viewMode === "pipeline"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Vista pipeline"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> {vista === "LEADS" ? "Nuevo Prospecto" : "Nuevo Lead"}</Button>
@@ -472,7 +473,7 @@ export default function Citas() {
         onBulkDelete={() => bulkDeleteMutation.mutate({ ids: Array.from(bulk.selectedIds) })}
       />
 
-      {/* Lead Cards */}
+      {/* Lead Cards / Pipeline Board */}
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground text-sm">Cargando...</div>
       ) : filteredLeads.length === 0 ? (
@@ -485,6 +486,12 @@ export default function Citas() {
             </div>
           ) : <p className="text-sm">No se encontraron registros</p>}
         </div>
+      ) : viewMode === "pipeline" ? (
+        <PipelineBoard
+          leads={filteredLeads}
+          vista={vista}
+          onEditLead={setEditingLead}
+        />
       ) : (
         <div className="space-y-1">
           {/* Select All */}

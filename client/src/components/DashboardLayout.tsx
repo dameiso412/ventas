@@ -47,6 +47,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { hasAccess, ROLE_LABELS, type CrmRole } from "@shared/permissions";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
+import { AIChatWidget } from "./AIChatWidget";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -333,6 +334,7 @@ function DashboardLayoutContent({
         )}
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </SidebarInset>
+      <AIChatWidget />
     </>
   );
 }

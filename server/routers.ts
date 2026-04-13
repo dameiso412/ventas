@@ -1303,5 +1303,20 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+
+  ai: router({
+    chat: crmProcedure
+      .input(z.object({
+        messages: z.array(z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const { invokeChatLLM } = await import("./_core/llm");
+        const result = await invokeChatLLM({ messages: input.messages });
+        return { content: result.content };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

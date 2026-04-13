@@ -9,4 +9,5 @@ export const ENV = {
   fbAccessToken: process.env.FB_ACCESS_TOKEN ?? "",
   metaAdAccountId: process.env.META_AD_ACCOUNT_ID ?? "act_1347234229107497",
   slackWebhookUrl: process.env.SLACK_WEBHOOK_URL ?? "",
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
 };
