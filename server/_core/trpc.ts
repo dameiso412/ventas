@@ -120,3 +120,30 @@ export const closerProcedure = t.procedure.use(
     });
   }),
 );
+
+/**
+ * Clinica Procedure - requires admin, closer (read), or clinic_member role.
+ * Used for clinica-mode pages: patients, products, analytics, members.
+ */
+const CLINICA_ROLES = ["admin", "closer", "clinic_member"] as const;
+
+export const clinicaProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+
+    if (!ctx.user) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    }
+
+    if (!(CLINICA_ROLES as readonly string[]).includes(ctx.user.role)) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "No tienes acceso al módulo Clínica." });
+    }
+
+    return next({
+      ctx: {
+        ...ctx,
+        user: ctx.user,
+      },
+    });
+  }),
+);

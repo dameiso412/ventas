@@ -1,9 +1,10 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, adminProcedure, crmProcedure } from "./_core/trpc";
+import { publicProcedure, router, adminProcedure, crmProcedure, clinicaProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import * as clinicaDb from "./clinica-db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1";
 import * as metaAds from "./meta-ads";
 import { performFullSync } from "./cron-meta-sync";
@@ -80,8 +81,39 @@ export const appRouter = router({
         data: z.record(z.string(), z.any()),
       }))
       .mutation(async ({ input }) => {
+        // Check if outcome is changing to VENTA — trigger patient creation
+        const isNewVenta = input.data.outcome === "VENTA";
+        let createdPatientId: string | null = null;
+
+        if (isNewVenta) {
+          // Fetch current lead to check if it already has a patient
+          const currentLead = await db.getLeadById(input.id);
+          if (currentLead && !currentLead.patientId) {
+            try {
+              // Get default org for patient creation
+              const org = await clinicaDb.getDefaultOrganization();
+              if (org) {
+                const patientId = await clinicaDb.createPatient({
+                  organizationId: org.id,
+                  patientName: currentLead.nombre || "Sin nombre",
+                  patientEmail: currentLead.correo || null,
+                  patientPhone: currentLead.telefono || null,
+                  treatmentType: currentLead.rubro || null,
+                  initialAmount: String(currentLead.facturado || currentLead.cashCollected || "0"),
+                  leadId: currentLead.id,
+                });
+                createdPatientId = patientId;
+                // Link patient back to lead
+                input.data.patientId = patientId;
+              }
+            } catch (err) {
+              console.error("[Lead→Patient] Failed to auto-create patient:", err);
+            }
+          }
+        }
+
         await db.updateLead(input.id, input.data);
-        return { success: true };
+        return { success: true, patientId: createdPatientId };
       }),
 
     delete: publicProcedure
@@ -1322,6 +1354,173 @@ export const appRouter = router({
     events: crmProcedure
       .input(z.object({ limit: z.number().optional() }).optional())
       .query(async ({ input }) => db.getManychatEvents(input?.limit ?? 50)),
+  }),
+
+  // ==================== CLINICA ====================
+  clinica: router({
+    patients: router({
+      list: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          status: z.string().optional(),
+          ownerId: z.string().optional(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getPatients(input.orgId, input)),
+
+      getById: clinicaProcedure
+        .input(z.object({ id: z.string() }))
+        .query(({ input }) => clinicaDb.getPatientById(input.id)),
+
+      create: clinicaProcedure
+        .input(z.object({
+          organizationId: z.string(),
+          patientName: z.string(),
+          patientEmail: z.string().optional(),
+          patientPhone: z.string().optional(),
+          treatmentType: z.string().optional(),
+          initialAmount: z.string().optional(),
+          ownerId: z.string().optional(),
+          leadId: z.number().optional(),
+          scheduledDate: z.date().optional(),
+          depositAmount: z.string().optional(),
+          hasDeposit: z.boolean().optional(),
+        }))
+        .mutation(async ({ input }) => {
+          const id = await clinicaDb.createPatient(input as any);
+          return { id };
+        }),
+
+      update: clinicaProcedure
+        .input(z.object({
+          id: z.string(),
+          data: z.record(z.string(), z.any()),
+        }))
+        .mutation(({ input }) => clinicaDb.updatePatient(input.id, input.data as any)),
+
+      archive: clinicaProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(({ input }) => clinicaDb.archivePatient(input.id)),
+    }),
+
+    products: router({
+      list: clinicaProcedure
+        .input(z.object({ orgId: z.string() }))
+        .query(({ input }) => clinicaDb.getProducts(input.orgId)),
+
+      getById: clinicaProcedure
+        .input(z.object({ id: z.string() }))
+        .query(({ input }) => clinicaDb.getProductById(input.id)),
+
+      create: clinicaProcedure
+        .input(z.object({
+          organizationId: z.string(),
+          name: z.string(),
+          description: z.string().optional(),
+          price: z.string().optional(),
+        }))
+        .mutation(async ({ input }) => {
+          const id = await clinicaDb.createProduct(input as any);
+          return { id };
+        }),
+
+      update: clinicaProcedure
+        .input(z.object({
+          id: z.string(),
+          data: z.record(z.string(), z.any()),
+        }))
+        .mutation(({ input }) => clinicaDb.updateProduct(input.id, input.data as any)),
+
+      delete: clinicaProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(({ input }) => clinicaDb.deleteProduct(input.id)),
+    }),
+
+    analytics: router({
+      kpis: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+          ownerId: z.string().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getClinicaKPIs(input.orgId, input, input.ownerId)),
+
+      revenue: clinicaProcedure
+        .input(z.object({ orgId: z.string() }))
+        .query(({ input }) => clinicaDb.getRevenueMetrics(input.orgId)),
+
+      funnel: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getConversionFunnel(input.orgId, input)),
+
+      ownerPerformance: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getOwnerPerformance(input.orgId, input)),
+
+      lossReasons: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getLossReasons(input.orgId, input)),
+
+      revenueChart: clinicaProcedure
+        .input(z.object({
+          orgId: z.string(),
+          from: z.date().optional(),
+          to: z.date().optional(),
+        }))
+        .query(({ input }) => clinicaDb.getRevenueChart(input.orgId, input)),
+    }),
+
+    lossReasons: router({
+      create: clinicaProcedure
+        .input(z.object({
+          patientId: z.string(),
+          organizationId: z.string(),
+          category: z.string(),
+          subcategory: z.string(),
+          lossType: z.string(),
+          estimatedValue: z.string().optional(),
+          notes: z.string().optional(),
+        }))
+        .mutation(async ({ input, ctx }) => {
+          const id = await clinicaDb.createLossReason({
+            ...input,
+            createdBy: ctx.user?.name || ctx.user?.email || "unknown",
+          } as any);
+          return { id };
+        }),
+
+      subcategories: clinicaProcedure
+        .query(() => clinicaDb.getLossSubcategories()),
+    }),
+
+    members: router({
+      list: clinicaProcedure
+        .input(z.object({ orgId: z.string() }))
+        .query(({ input }) => clinicaDb.getClinicaMembers(input.orgId)),
+    }),
+
+    organization: router({
+      get: clinicaProcedure
+        .input(z.object({ orgId: z.string() }))
+        .query(({ input }) => clinicaDb.getOrganization(input.orgId)),
+
+      getDefault: clinicaProcedure
+        .query(() => clinicaDb.getDefaultOrganization()),
+    }),
   }),
 
   ai: router({

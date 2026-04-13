@@ -44,12 +44,15 @@ import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { hasAccess, ROLE_LABELS, type CrmRole } from "@shared/permissions";
+import { hasAccess, canAccessPipeline, canAccessClinica, ROLE_LABELS, type CrmRole } from "@shared/permissions";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
 import { AIChatWidget } from "./AIChatWidget";
+import { ModeToggle } from "./ModeToggle";
+import { usePlatformMode } from "@/contexts/PlatformModeContext";
+import { Stethoscope, Package, Settings } from "lucide-react";
 
-const menuItems = [
+const pipelineMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ListTodo, label: "Cola de Trabajo", path: "/cola-trabajo" },
   { icon: ClipboardCheck, label: "Confirmaciones", path: "/confirmaciones" },
@@ -71,6 +74,14 @@ const menuItems = [
   { icon: Shield, label: "Accesos", path: "/accesos" },
   { icon: Webhook, label: "Webhook Info", path: "/webhook" },
   { icon: Code, label: "API REST", path: "/api" },
+];
+
+const clinicaMenuItems = [
+  { icon: Stethoscope, label: "Pacientes", path: "/clinica" },
+  { icon: BarChart3, label: "Analytics", path: "/clinica/analytics" },
+  { icon: Package, label: "Productos", path: "/clinica/products" },
+  { icon: Users, label: "Miembros", path: "/clinica/members" },
+  { icon: Settings, label: "Config", path: "/clinica/settings" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -125,15 +136,24 @@ function DashboardLayoutContent({
   const { theme, toggleTheme } = useTheme();
   const { user, loading, logout } = useAuth();
 
-  // Filter menu items based on user role
+  const { mode } = usePlatformMode();
+
+  // Determine which modes this user can access
+  const userCanPipeline = user ? canAccessPipeline(user.role) : false;
+  const userCanClinica = user ? canAccessClinica(user.role) : false;
+  const showModeToggle = userCanPipeline && userCanClinica;
+
+  // Filter menu items based on user role and current mode
+  const menuItems = mode === "clinica" ? clinicaMenuItems : pipelineMenuItems;
   const filteredMenuItems = useMemo(() => {
     if (!user) return [];
     const role = user.role;
     return menuItems.filter(item => hasAccess(role, item.path));
-  }, [user]);
+  }, [user, menuItems]);
 
-  const activeMenuItem = filteredMenuItems.find(item => item.path === location) 
-    || menuItems.find(item => item.path === location);
+  const allMenuItems = [...pipelineMenuItems, ...clinicaMenuItems];
+  const activeMenuItem = filteredMenuItems.find(item => item.path === location)
+    || allMenuItems.find(item => item.path === location);
 
   // Get user initials for avatar
   const userInitials = useMemo(() => {
@@ -198,6 +218,8 @@ function DashboardLayoutContent({
               ) : null}
             </div>
           </SidebarHeader>
+
+          {showModeToggle && <ModeToggle collapsed={isCollapsed} />}
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">

@@ -29,8 +29,14 @@ import Calculadora from "./pages/Calculadora";
 import AccesoDenegado from "./pages/AccesoDenegado";
 import NoPermiso from "./pages/NoPermiso";
 import Login from "./pages/Login";
+import ClinicaDashboard from "./pages/clinica/ClinicaDashboard";
+import ClinicaAnalytics from "./pages/clinica/ClinicaAnalytics";
+import ClinicaProducts from "./pages/clinica/ClinicaProducts";
+import ClinicaMembers from "./pages/clinica/ClinicaMembers";
+import ClinicaSettings from "./pages/clinica/ClinicaSettings";
 import { useAuth } from "./_core/hooks/useAuth";
 import { hasAccess } from "@shared/permissions";
+import { PlatformModeProvider } from "./contexts/PlatformModeContext";
 import { DashboardLayoutSkeleton } from "./components/DashboardLayoutSkeleton";
 import { useEffect, type ComponentType } from "react";
 
@@ -42,8 +48,8 @@ function ProtectedRoute({ component: Component, path }: { component: ComponentTy
   const { user } = useAuth();
   if (!user) return null;
 
-  const crmRoles = ["admin", "setter", "closer"];
-  if (!crmRoles.includes(user.role)) {
+  const allowedRoles = ["admin", "setter", "closer", "clinic_member"];
+  if (!allowedRoles.includes(user.role)) {
     return <AccesoDenegado />;
   }
 
@@ -70,8 +76,8 @@ function CRMRouter() {
     return <DashboardLayoutSkeleton />;
   }
 
-  // If user has no CRM role, show access denied
-  if (user && !["admin", "setter", "closer"].includes(user.role)) {
+  // If user has no valid role, show access denied
+  if (user && !["admin", "setter", "closer", "clinic_member"].includes(user.role)) {
     return <AccesoDenegado />;
   }
 
@@ -147,6 +153,22 @@ function CRMRouter() {
         <Route path={"/api"}>
           <ProtectedRoute component={ApiDocs} path="/api" />
         </Route>
+        {/* Clinica routes */}
+        <Route path={"/clinica"}>
+          <ProtectedRoute component={ClinicaDashboard} path="/clinica" />
+        </Route>
+        <Route path={"/clinica/analytics"}>
+          <ProtectedRoute component={ClinicaAnalytics} path="/clinica/analytics" />
+        </Route>
+        <Route path={"/clinica/products"}>
+          <ProtectedRoute component={ClinicaProducts} path="/clinica/products" />
+        </Route>
+        <Route path={"/clinica/members"}>
+          <ProtectedRoute component={ClinicaMembers} path="/clinica/members" />
+        </Route>
+        <Route path={"/clinica/settings"}>
+          <ProtectedRoute component={ClinicaSettings} path="/clinica/settings" />
+        </Route>
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>
@@ -158,16 +180,18 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
-        <TooltipProvider>
-          <Toaster />
-          <Switch>
-            <Route path="/login" component={Login} />
-            <Route path="/acceso-denegado" component={AccesoDenegado} />
-            <Route>
-              <CRMRouter />
-            </Route>
-          </Switch>
-        </TooltipProvider>
+        <PlatformModeProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Switch>
+              <Route path="/login" component={Login} />
+              <Route path="/acceso-denegado" component={AccesoDenegado} />
+              <Route>
+                <CRMRouter />
+              </Route>
+            </Switch>
+          </TooltipProvider>
+        </PlatformModeProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

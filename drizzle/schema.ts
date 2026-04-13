@@ -1,4 +1,4 @@
-import { integer, bigint, text, timestamp, varchar, decimal, json, jsonb, uniqueIndex, pgTable, pgEnum, serial } from "drizzle-orm/pg-core";
+import { integer, bigint, text, timestamp, varchar, decimal, json, jsonb, uniqueIndex, pgTable, pgEnum, serial, boolean, uuid } from "drizzle-orm/pg-core";
 
 // ==================== Enums ====================
 
@@ -28,6 +28,11 @@ export const webhookStatusEnum = pgEnum("webhook_status", ["RECEIVED", "PROCESSE
 export const canalEnum = pgEnum("canal", ["LLAMADA", "WHATSAPP", "SMS", "EMAIL", "DM_INSTAGRAM", "OTRO"]);
 export const contactResultadoEnum = pgEnum("contact_resultado", ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "MENSAJE ENVIADO", "WHATSAPP LIMPIADO"]);
 export const notificationTypeEnum = pgEnum("notification_type", ["mention", "comment", "system"]);
+
+// ==================== Clinica Enums ====================
+export const patientStatusEnum = pgEnum("patient_status", ["pending", "incomplete", "completed"]);
+export const upsellDecisionEnum = pgEnum("upsell_decision", ["pending", "completed", "declined", "postponed"]);
+export const clinicRoleEnum = pgEnum("clinic_role", ["admin", "member"]);
 export const syncStatusEnum = pgEnum("sync_status", ["success", "error", "running"]);
 export const teamMemberRolEnum = pgEnum("team_member_rol", ["SETTER", "CLOSER", "SETTER_CLOSER"]);
 export const allowedEmailRoleEnum = pgEnum("allowed_email_role", ["admin", "setter", "closer"]);
@@ -75,6 +80,7 @@ export const leads = pgTable("leads", {
   // ManyChat / Instagram funnel
   manychatSubscriberId: varchar("manychatSubscriberId", { length: 100 }),
   igFunnelStage: igFunnelStageEnum("igFunnelStage"),
+  patientId: varchar("patientId", { length: 100 }), // Links to clinic_patients.id
   // Estado del lead (para leads sin agendar)
   estadoLead: estadoLeadEnum("estadoLead").default("NUEVO"),
   // Proceso de contacto
@@ -796,3 +802,346 @@ export const manychatEvents = pgTable("manychat_events", {
 
 export type ManychatEvent = typeof manychatEvents.$inferSelect;
 export type InsertManychatEvent = typeof manychatEvents.$inferInsert;
+
+// ==================== CLINICA TABLES ====================
+
+/**
+ * Clinic Organizations - Multi-tenant org for clinics
+ */
+export const clinicOrganizations = pgTable("clinic_organizations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  webhookToken: varchar("webhook_token", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicOrganization = typeof clinicOrganizations.$inferSelect;
+export type InsertClinicOrganization = typeof clinicOrganizations.$inferInsert;
+
+/**
+ * Clinic Patients - Post-sale patient management
+ */
+export const clinicPatients = pgTable("clinic_patients", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  patientName: varchar("patient_name", { length: 255 }).notNull(),
+  patientEmail: varchar("patient_email", { length: 255 }),
+  patientPhone: varchar("patient_phone", { length: 50 }),
+  treatmentType: varchar("treatment_type", { length: 255 }),
+  initialAmount: decimal("initial_amount", { precision: 10, scale: 2 }).default("0").notNull(),
+  attended: boolean("attended"),
+  purchased: boolean("purchased"),
+  upsellProductId: uuid("upsell_product_id"),
+  upsellPrice: decimal("upsell_price", { precision: 10, scale: 2 }),
+  upsellNote: text("upsell_note"),
+  upsellDecision: upsellDecisionEnum("upsell_decision"),
+  upsellNotes: text("upsell_notes"),
+  baseTreatmentPrice: decimal("base_treatment_price", { precision: 10, scale: 2 }),
+  status: patientStatusEnum("status").default("pending").notNull(),
+  ownerId: varchar("owner_id", { length: 100 }),
+  leadId: integer("lead_id"), // Links to leads.id in ventas CRM
+  scheduledDate: timestamp("scheduled_date"),
+  scheduledNotes: text("scheduled_notes"),
+  depositAmount: decimal("deposit_amount", { precision: 10, scale: 2 }),
+  depositDate: timestamp("deposit_date"),
+  hasDeposit: boolean("has_deposit"),
+  depositProductId: uuid("deposit_product_id"),
+  lossReasonCaptured: boolean("loss_reason_captured"),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicPatient = typeof clinicPatients.$inferSelect;
+export type InsertClinicPatient = typeof clinicPatients.$inferInsert;
+
+/**
+ * Clinic Products - Treatment/product catalog
+ */
+export const clinicProducts = pgTable("clinic_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  price: decimal("price", { precision: 10, scale: 2 }).default("0").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicProduct = typeof clinicProducts.$inferSelect;
+export type InsertClinicProduct = typeof clinicProducts.$inferInsert;
+
+/**
+ * Clinic User Profiles - User display info scoped to org
+ */
+export const clinicUserProfiles = pgTable("clinic_user_profiles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  organizationId: uuid("organization_id"),
+  displayName: varchar("display_name", { length: 255 }),
+  email: varchar("email", { length: 255 }),
+  hasCompletedOnboarding: boolean("has_completed_onboarding").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicUserProfile = typeof clinicUserProfiles.$inferSelect;
+export type InsertClinicUserProfile = typeof clinicUserProfiles.$inferInsert;
+
+/**
+ * Clinic User Roles - Role assignments per org
+ */
+export const clinicUserRoles = pgTable("clinic_user_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  role: clinicRoleEnum("role").default("member").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicUserRole = typeof clinicUserRoles.$inferSelect;
+export type InsertClinicUserRole = typeof clinicUserRoles.$inferInsert;
+
+/**
+ * Clinic Loss Reasons - Why patients didn't convert
+ */
+export const clinicLossReasons = pgTable("clinic_loss_reasons", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  patientId: uuid("patient_id").notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  subcategory: varchar("subcategory", { length: 100 }).notNull(),
+  lossType: varchar("loss_type", { length: 50 }).notNull(), // no_show, no_sale, cancelled
+  estimatedValue: decimal("estimated_value", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicLossReason = typeof clinicLossReasons.$inferSelect;
+export type InsertClinicLossReason = typeof clinicLossReasons.$inferInsert;
+
+/**
+ * Loss Subcategories - Category taxonomy for loss reasons
+ */
+export const lossSubcategories = pgTable("loss_subcategories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  category: varchar("category", { length: 100 }).notNull(),
+  subcategoryKey: varchar("subcategory_key", { length: 100 }).notNull(),
+  subcategoryLabelEs: varchar("subcategory_label_es", { length: 255 }).notNull(),
+  subcategoryLabelEn: varchar("subcategory_label_en", { length: 255 }).notNull(),
+  groupName: varchar("group_name", { length: 100 }),
+  displayOrder: integer("display_order"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type LossSubcategory = typeof lossSubcategories.$inferSelect;
+
+/**
+ * Clinic Payment Notifications - Payment events
+ */
+export const clinicPaymentNotifications = pgTable("clinic_payment_notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  patientId: uuid("patient_id").notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentData: jsonb("payment_data"),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
+export type ClinicPaymentNotification = typeof clinicPaymentNotifications.$inferSelect;
+
+/**
+ * Clinic Analytics Alerts - Metric monitoring
+ */
+export const clinicAnalyticsAlerts = pgTable("clinic_analytics_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  alertTitle: varchar("alert_title", { length: 255 }).notNull(),
+  alertDescription: text("alert_description"),
+  alertType: varchar("alert_type", { length: 50 }).notNull(),
+  metricName: varchar("metric_name", { length: 100 }).notNull(),
+  conditionType: varchar("condition_type", { length: 50 }).notNull(),
+  thresholdValue: decimal("threshold_value", { precision: 10, scale: 2 }).notNull(),
+  thresholdUnit: varchar("threshold_unit", { length: 20 }).default("absolute"),
+  comparisonPeriod: varchar("comparison_period", { length: 20 }).default("previous_period"),
+  notificationChannels: jsonb("notification_channels").default("{}"),
+  isActive: boolean("is_active").default(true).notNull(),
+  triggerCount: integer("trigger_count").default(0).notNull(),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicAnalyticsAlert = typeof clinicAnalyticsAlerts.$inferSelect;
+
+/**
+ * Clinic Analytics Alert Logs - Alert trigger history
+ */
+export const clinicAnalyticsAlertLogs = pgTable("clinic_analytics_alert_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  alertId: uuid("alert_id").notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  metricValue: decimal("metric_value", { precision: 10, scale: 2 }).notNull(),
+  thresholdValue: decimal("threshold_value", { precision: 10, scale: 2 }).notNull(),
+  alertData: jsonb("alert_data"),
+  notificationStatus: jsonb("notification_status"),
+  triggeredAt: timestamp("triggered_at").defaultNow().notNull(),
+});
+
+export type ClinicAnalyticsAlertLog = typeof clinicAnalyticsAlertLogs.$inferSelect;
+
+/**
+ * Clinic Slack Integrations - Per-org Slack connections
+ */
+export const clinicSlackIntegrations = pgTable("clinic_slack_integrations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  accessToken: text("access_token"),
+  teamId: varchar("team_id", { length: 100 }),
+  teamName: varchar("team_name", { length: 255 }),
+  selectedChannelId: varchar("selected_channel_id", { length: 100 }),
+  selectedChannelName: varchar("selected_channel_name", { length: 255 }),
+  webhookUrl: text("webhook_url"),
+  botUserId: varchar("bot_user_id", { length: 100 }),
+  scope: text("scope"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicSlackIntegration = typeof clinicSlackIntegrations.$inferSelect;
+
+/**
+ * Clinic Report Templates - Custom analytics report templates
+ */
+export const clinicReportTemplates = pgTable("clinic_report_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  contentConfig: jsonb("content_config").default("{}"),
+  brandingConfig: jsonb("branding_config").default("{}"),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicReportTemplate = typeof clinicReportTemplates.$inferSelect;
+
+/**
+ * Clinic Notification Schedules - Scheduled report delivery
+ */
+export const clinicNotificationSchedules = pgTable("clinic_notification_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  reportType: varchar("report_type", { length: 50 }).notNull(),
+  templateId: uuid("template_id"),
+  scheduleTime: varchar("schedule_time", { length: 10 }).default("09:00"),
+  timezone: varchar("timezone", { length: 50 }).default("America/Santiago"),
+  channelId: varchar("channel_id", { length: 100 }).notNull(),
+  channelName: varchar("channel_name", { length: 255 }).notNull(),
+  deliveryFormat: varchar("delivery_format", { length: 20 }).default("slack"),
+  recipientsConfig: jsonb("recipients_config").default("{}"),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastSentAt: timestamp("last_sent_at"),
+  lastExecutionAt: timestamp("last_execution_at"),
+  lastExecutionStatus: varchar("last_execution_status", { length: 20 }),
+  nextExecutionAt: timestamp("next_execution_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicNotificationSchedule = typeof clinicNotificationSchedules.$inferSelect;
+
+/**
+ * Clinic Webhook Logs - Patient creation webhook audit
+ */
+export const clinicWebhookLogs = pgTable("clinic_webhook_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  action: varchar("action", { length: 50 }).notNull(), // created, updated, error
+  patientData: jsonb("patient_data"),
+  status: varchar("status", { length: 20 }).default("success"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ClinicWebhookLog = typeof clinicWebhookLogs.$inferSelect;
+
+/**
+ * Clinic Failed Webhooks - Retry queue
+ */
+export const clinicFailedWebhooks = pgTable("clinic_failed_webhooks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id").notNull(),
+  webhookLogId: uuid("webhook_log_id").notNull(),
+  webhookData: jsonb("webhook_data").notNull(),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0).notNull(),
+  maxRetries: integer("max_retries").default(5).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  nextRetryAt: timestamp("next_retry_at").notNull(),
+  lastRetryAt: timestamp("last_retry_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type ClinicFailedWebhook = typeof clinicFailedWebhooks.$inferSelect;
+
+/**
+ * Clinic Onboarding Checklist - Track onboarding progress
+ */
+export const clinicOnboardingChecklist = pgTable("clinic_onboarding_checklist", {
+  organizationId: uuid("organization_id").notNull(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  addedProduct: boolean("added_product").default(false).notNull(),
+  addedProductAt: timestamp("added_product_at"),
+  completedPatient: boolean("completed_patient").default(false).notNull(),
+  completedPatientAt: timestamp("completed_patient_at"),
+  invitedMember: boolean("invited_member").default(false).notNull(),
+  invitedMemberAt: timestamp("invited_member_at"),
+  viewedAnalytics: boolean("viewed_analytics").default(false).notNull(),
+  viewedAnalyticsAt: timestamp("viewed_analytics_at"),
+  completedAt: timestamp("completed_at"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  lastUpdatedAt: timestamp("last_updated_at").defaultNow().notNull(),
+});
+
+/**
+ * User Dashboard Layouts - Custom analytics dashboard config
+ */
+export const userDashboardLayouts = pgTable("user_dashboard_layouts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  layoutName: varchar("layout_name", { length: 255 }).default("Default"),
+  layoutConfig: jsonb("layout_config").default("{}"),
+  isDefault: boolean("is_default").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type UserDashboardLayout = typeof userDashboardLayouts.$inferSelect;
+
+/**
+ * Currency Config - Multi-currency support
+ */
+export const currencyConfig = pgTable("currency_config", {
+  code: varchar("code", { length: 10 }).primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  symbol: varchar("symbol", { length: 10 }).notNull(),
+  locale: varchar("locale", { length: 20 }).notNull(),
+  decimals: integer("decimals").default(2).notNull(),
+});
+
+export type CurrencyConfigRow = typeof currencyConfig.$inferSelect;

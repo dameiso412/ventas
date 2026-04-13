@@ -3,7 +3,7 @@
  * Shared between frontend (navigation filtering) and backend (route protection).
  */
 
-export type CrmRole = "admin" | "setter" | "closer";
+export type CrmRole = "admin" | "setter" | "closer" | "clinic_member";
 
 /**
  * Each route entry defines which roles can access it.
@@ -16,6 +16,7 @@ export interface RoutePermission {
 }
 
 export const ROUTE_PERMISSIONS: RoutePermission[] = [
+  // Pipeline routes
   { path: "/", label: "Dashboard", roles: ["admin", "setter", "closer"] },
   { path: "/cola-trabajo", label: "Cola de Trabajo", roles: ["admin", "setter"] },
   { path: "/confirmaciones", label: "Confirmaciones", roles: ["admin", "setter"] },
@@ -37,6 +38,12 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: "/api", label: "API REST", roles: ["admin"] },
   { path: "/calculadora", label: "Calculadora Revenue", roles: ["admin"] },
   { path: "/accesos", label: "Accesos", roles: ["admin"] },
+  // Clinica routes
+  { path: "/clinica", label: "Pacientes", roles: ["admin", "closer", "clinic_member"] },
+  { path: "/clinica/analytics", label: "Analytics Clinica", roles: ["admin", "clinic_member"] },
+  { path: "/clinica/products", label: "Productos", roles: ["admin", "clinic_member"] },
+  { path: "/clinica/members", label: "Miembros Clinica", roles: ["admin", "clinic_member"] },
+  { path: "/clinica/settings", label: "Config Clinica", roles: ["admin", "clinic_member"] },
 ];
 
 /**
@@ -55,11 +62,27 @@ export function hasAccess(role: string, path: string): boolean {
     if (path.startsWith(r.path + "/")) return true;
     // Handle /auditoria/:id
     if (r.path === "/auditoria" && path.startsWith("/auditoria")) return true;
+    // Handle /clinica sub-routes
+    if (r.path === "/clinica" && path.startsWith("/clinica")) return true;
     return false;
   });
 
   if (!permission) return true; // Unlisted routes accessible by all CRM roles
   return permission.roles.includes(role as CrmRole);
+}
+
+/**
+ * Check if a role can access pipeline mode.
+ */
+export function canAccessPipeline(role: string): boolean {
+  return role === "admin" || role === "setter" || role === "closer";
+}
+
+/**
+ * Check if a role can access clinica mode.
+ */
+export function canAccessClinica(role: string): boolean {
+  return role === "admin" || role === "closer" || role === "clinic_member";
 }
 
 /**
@@ -77,16 +100,19 @@ export const ROLE_LABELS: Record<CrmRole, string> = {
   admin: "Administrador",
   setter: "Setter",
   closer: "Closer",
+  clinic_member: "Clinica",
 };
 
 export const ROLE_COLORS: Record<CrmRole, string> = {
   admin: "text-purple-400",
   setter: "text-blue-400",
   closer: "text-emerald-400",
+  clinic_member: "text-pink-400",
 };
 
 export const ROLE_BG_COLORS: Record<CrmRole, string> = {
   admin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
   setter: "bg-blue-500/20 text-blue-300 border-blue-500/30",
   closer: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  clinic_member: "bg-pink-500/20 text-pink-300 border-pink-500/30",
 };
