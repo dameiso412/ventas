@@ -111,7 +111,7 @@ export const appRouter = router({
         leadId: z.number(),
         timestamp: z.string(),
         canal: z.enum(["LLAMADA", "WHATSAPP", "SMS", "EMAIL", "DM_INSTAGRAM", "OTRO"]),
-        resultado: z.enum(["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "MENSAJE ENVIADO"]).optional(),
+        resultado: z.enum(["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "MENSAJE ENVIADO", "WHATSAPP LIMPIADO"]).optional(),
         notas: z.string().optional(),
         realizadoPor: z.string().optional(),
       }))

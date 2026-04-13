@@ -21,6 +21,7 @@ import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
 import { ProspectProfile } from "@/components/ProspectProfile";
+import { calculateBusinessHours } from "@shared/businessHours";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -38,7 +39,7 @@ const TRIAGE_OPTIONS = ["COMPLETADO", "PENDIENTE", "N/A"];
 const RAZONES_NO_CALIFICA = ["Agencia", "Rubro No Válido", "Sin Presupuesto", "Clínica Muy Nueva", "No Es Propietario", "Otro"];
 const RAZONES_NO_CONVERSION = ["Sin Dinero", "Logística", "Era una agencia de MK no válido", "Necesita Consultarlo", "Quiere Comparar", "No Interesado", "Otro"];
 const CANALES_CONTACTO = ["LLAMADA", "WHATSAPP", "SMS", "EMAIL", "DM_INSTAGRAM", "OTRO"] as const;
-const RESULTADOS_INTENTO = ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "MENSAJE ENVIADO"] as const;
+const RESULTADOS_INTENTO = ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "WHATSAPP LIMPIADO"] as const;
 const CALIFICACION_FINANCIERA = ["SÍ", "NO", "PARCIAL"] as const;
 
 const CANAL_ICONS: Record<string, typeof Phone> = {
@@ -800,15 +801,7 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
     tipo: lead.tipo || "DEMO",
     // Proceso de contacto (Setter)
     setterAsignado: lead.setterAsignado || "",
-    fechaPrimerContacto: (() => {
-      if (!lead.fechaPrimerContacto) return "";
-      try {
-        const d = lead.fechaPrimerContacto instanceof Date ? lead.fechaPrimerContacto : new Date(String(lead.fechaPrimerContacto));
-        return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 16);
-      } catch { return ""; }
-    })(),
     intentosContacto: lead.intentosContacto?.toString() || "0",
-    resultadoContacto: lead.resultadoContacto || "PENDIENTE",
     // Calificación
     validoParaContacto: lead.validoParaContacto || "SÍ",
     califica: lead.califica || "POR EVALUAR",
@@ -856,16 +849,14 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
   );
   const scoringData = (scoringByLeadId?.p1Frustracion ? scoringByLeadId : scoringByCorreo) || scoringByLeadId;
 
-  // Calculate tiempo respuesta (auto)
+  // Calculate tiempo respuesta (auto) — business hours from createdAt
   const tiempoRespuesta = useMemo(() => {
-    if (!lead.fecha || !form.fechaPrimerContacto) return null;
-    const agendaDate = new Date(lead.fecha);
-    const contactDate = new Date(form.fechaPrimerContacto);
-    const diffMs = contactDate.getTime() - agendaDate.getTime();
-    if (diffMs < 0) return null;
-    const hours = diffMs / (1000 * 60 * 60);
-    return hours;
-  }, [lead.fecha, form.fechaPrimerContacto]);
+    if (!lead.createdAt || !lead.fechaPrimerContacto) return null;
+    const entryDate = new Date(lead.createdAt);
+    const contactDate = new Date(lead.fechaPrimerContacto);
+    if (contactDate <= entryDate) return null;
+    return calculateBusinessHours(entryDate, contactDate);
+  }, [lead.createdAt, lead.fechaPrimerContacto]);
 
   // Helper to safely convert a date value to an ISO string (plain string, not Date object)
   // This avoids SuperJSON serialization issues with Date-like values
@@ -886,8 +877,11 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
       ...form,
       intentosContacto: parseInt(form.intentosContacto) || 0,
     };
-    // Convert fechaPrimerContacto to ISO string for DB storage
-    data.fechaPrimerContacto = safeToISOString(form.fechaPrimerContacto);
+    // Contact fields are derived from ContactAttemptsTracker — exclude from save
+    delete data.intentosContacto;
+    delete data.fechaPrimerContacto;
+    delete data.resultadoContacto;
+    delete data.tiempoRespuestaHoras;
     // Convert fechaProximoCobro to ISO string
     data.fechaProximoCobro = safeToISOString(form.fechaProximoCobro);
     // Sanitize decimal fields: empty strings → "0"
@@ -906,10 +900,6 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
     // If productoTipo is empty string, set to null
     if (!data.productoTipo) {
       data.productoTipo = null;
-    }
-    // Auto-calculate tiempoRespuestaHoras
-    if (tiempoRespuesta !== null) {
-      data.tiempoRespuestaHoras = tiempoRespuesta.toFixed(2);
     }
     onSave(data);
   };
@@ -998,12 +988,15 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Fecha 1er Contacto</Label>
-            <Input
-              type="datetime-local"
-              value={form.fechaPrimerContacto}
-              onChange={e => setForm(p => ({ ...p, fechaPrimerContacto: e.target.value }))}
-              className="bg-background/50"
-            />
+            <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border/50 bg-background/30">
+              {lead.fechaPrimerContacto ? (
+                <span className="text-xs text-foreground/80">
+                  {new Date(lead.fechaPrimerContacto).toLocaleString("es-CL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground italic">Auto (vía intentos)</span>
+              )}
+            </div>
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Tiempo Respuesta</Label>
@@ -1028,10 +1021,16 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
           </div>
           <div className="col-span-2">
             <Label className="text-xs text-muted-foreground">Resultado Contacto</Label>
-            <Select value={form.resultadoContacto} onValueChange={v => setForm(p => ({ ...p, resultadoContacto: v }))}>
-              <SelectTrigger className="bg-background/50"><SelectValue /></SelectTrigger>
-              <SelectContent>{RESULTADOS_CONTACTO.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border/50 bg-background/30">
+              <span className={`text-xs font-medium ${
+                lead.resultadoContacto === "CONTESTÓ" ? "text-green-400"
+                : lead.resultadoContacto === "PENDIENTE" ? "text-muted-foreground"
+                : "text-amber-400"
+              }`}>
+                {lead.resultadoContacto || "PENDIENTE"}
+              </span>
+              <span className="text-[10px] text-muted-foreground ml-auto">Auto (vía intentos)</span>
+            </div>
           </div>
           {/* Contact Attempts Tracker */}
           <div className="col-span-2 mt-1">
@@ -1955,7 +1954,7 @@ function ResponseTimeCell({ lead, responseData }: { lead: any; responseData?: { 
   const CONTACTED_RESULTS = ["CONTEST\u00d3", "NO CONTEST\u00d3", "BUZ\u00d3N", "N\u00daMERO INV\u00c1LIDO", "WHATSAPP LIMPIADO", "MENSAJE ENVIADO"];
   const hasResultadoContacto = lead.resultadoContacto && CONTACTED_RESULTS.includes(lead.resultadoContacto);
   const hasContact = responseData?.firstAttempt != null || lead.fechaPrimerContacto != null || hasResultadoContacto;
-  const leadDate = lead.fecha ? new Date(lead.fecha) : lead.createdAt ? new Date(lead.createdAt) : null;
+  const leadDate = lead.createdAt ? new Date(lead.createdAt) : null;
   
   // Live timer: update every 30 seconds for uncontacted leads
   useEffect(() => {
@@ -1998,11 +1997,10 @@ function ResponseTimeCell({ lead, responseData }: { lead: any; responseData?: { 
       );
     }
     
-    const diffMs = firstContactDate.getTime() - leadDate.getTime();
-    if (diffMs < 0) return <span className="text-muted-foreground/40 text-[10px]">—</span>;
-    
-    const hours = diffMs / (1000 * 60 * 60);
-    const minutes = diffMs / (1000 * 60);
+    if (firstContactDate <= leadDate) return <span className="text-muted-foreground/40 text-[10px]">—</span>;
+
+    const hours = calculateBusinessHours(leadDate, firstContactDate);
+    const minutes = hours * 60;
     
     // Color coding: green ≤30min, yellow 30min-3hrs, red >3hrs
     const colorClass = minutes <= 30 ? "text-green-400 bg-green-500/10 border-green-500/30" 
@@ -2020,7 +2018,7 @@ function ResponseTimeCell({ lead, responseData }: { lead: any; responseData?: { 
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>Tiempo de respuesta: {minutes < 60 ? `${Math.round(minutes)} minutos` : `${hours.toFixed(1)} horas`}</p>
+          <p>Tiempo de respuesta (hábil): {minutes < 60 ? `${Math.round(minutes)} minutos` : `${hours.toFixed(1)} horas`}</p>
           <p className="text-muted-foreground">1er contacto: {firstContactDate.toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
           {responseData?.attemptCount && <p className="text-muted-foreground">{responseData.attemptCount} intento(s) total</p>}
         </TooltipContent>
@@ -2028,12 +2026,11 @@ function ResponseTimeCell({ lead, responseData }: { lead: any; responseData?: { 
     );
   }
   
-  // Not contacted yet: show live elapsed timer
-  const elapsedMs = now - leadDate.getTime();
-  if (elapsedMs < 0) return <span className="text-muted-foreground/40 text-[10px]">—</span>;
-  
-  const elapsedMinutes = elapsedMs / (1000 * 60);
-  const elapsedHours = elapsedMs / (1000 * 60 * 60);
+  // Not contacted yet: show live elapsed timer (business hours)
+  const elapsedHours = calculateBusinessHours(leadDate, new Date(now));
+  if (elapsedHours <= 0) return <span className="text-muted-foreground/40 text-[10px]">—</span>;
+
+  const elapsedMinutes = elapsedHours * 60;
   
   // Color coding for live timer
   const colorClass = elapsedMinutes <= 30 ? "text-green-400 bg-green-500/10 border-green-500/30" 
@@ -2054,7 +2051,7 @@ function ResponseTimeCell({ lead, responseData }: { lead: any; responseData?: { 
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
         <p className="font-medium">Sin contactar</p>
-        <p>Tiempo transcurrido: {elapsedMinutes < 60 ? `${Math.round(elapsedMinutes)} minutos` : `${elapsedHours.toFixed(1)} horas`}</p>
+        <p>Tiempo hábil transcurrido: {elapsedMinutes < 60 ? `${Math.round(elapsedMinutes)} minutos` : `${elapsedHours.toFixed(1)} horas`}</p>
         <p className="text-muted-foreground">Entrada: {leadDate.toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
       </TooltipContent>
     </Tooltip>

@@ -28,6 +28,7 @@ import {
   leadDataEntries, InsertLeadDataEntry,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { calculateBusinessHours } from '../shared/businessHours';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _sql: ReturnType<typeof postgres> | null = null;
@@ -1777,7 +1778,7 @@ export async function createContactAttempt(data: {
   leadId: number;
   timestamp: Date;
   canal: "LLAMADA" | "WHATSAPP" | "SMS" | "EMAIL" | "DM_INSTAGRAM" | "OTRO";
-  resultado?: "CONTESTÓ" | "NO CONTESTÓ" | "BUZÓN" | "NÚMERO INVÁLIDO" | "MENSAJE ENVIADO";
+  resultado?: "CONTESTÓ" | "NO CONTESTÓ" | "BUZÓN" | "NÚMERO INVÁLIDO" | "MENSAJE ENVIADO" | "WHATSAPP LIMPIADO";
   notas?: string;
   realizadoPor?: string;
 }) {
@@ -1800,10 +1801,16 @@ export async function createContactAttempt(data: {
     ) WHERE id = ${data.leadId}`
   );
   
-  // If the attempt resulted in "CONTESTÓ", update the lead's resultadoContacto
-  if (data.resultado === "CONTESTÓ") {
+  // Auto-sync resultadoContacto to the latest attempt's resultado
+  const [latestAttempt] = await db.execute(
+    sql`SELECT resultado FROM contact_attempts WHERE "leadId" = ${data.leadId} ORDER BY timestamp DESC LIMIT 1`
+  );
+  if (latestAttempt) {
+    const resultado = (latestAttempt as any).resultado;
+    // Map MENSAJE ENVIADO → NO CONTESTÓ for the lead enum
+    const mapped = resultado === "MENSAJE ENVIADO" ? "NO CONTESTÓ" : resultado;
     await db.execute(
-      sql`UPDATE leads SET resultadoContacto = 'CONTESTÓ' WHERE id = ${data.leadId} AND resultadoContacto != 'CONTESTÓ'`
+      sql`UPDATE leads SET "resultadoContacto" = ${mapped} WHERE id = ${data.leadId}`
     );
   }
   
@@ -1815,15 +1822,20 @@ export async function createContactAttempt(data: {
     ) WHERE id = ${data.leadId}`
   );
   
-  // Auto-calculate tiempoRespuestaHoras based on lead.fecha (agenda date) and first attempt
-  await db.execute(
-    sql`UPDATE leads SET "tiempoRespuestaHoras" = ROUND(
-      EXTRACT(EPOCH FROM (
-        (SELECT MIN(timestamp) FROM contact_attempts WHERE "leadId" = ${data.leadId})
-        - fecha
-      )) / 3600.0, 2
-    ), "updatedAt" = NOW() WHERE id = ${data.leadId} AND fecha IS NOT NULL`
-  );
+  // Auto-calculate tiempoRespuestaHoras using business hours (createdAt → first attempt)
+  const [lead] = await db.select({ createdAt: leads.createdAt }).from(leads).where(eq(leads.id, data.leadId));
+  if (lead?.createdAt) {
+    const [firstRow] = await db.execute(
+      sql`SELECT MIN(timestamp) as first_ts FROM contact_attempts WHERE "leadId" = ${data.leadId}`
+    );
+    const firstTs = (firstRow as any)?.first_ts;
+    if (firstTs) {
+      const bizHours = calculateBusinessHours(new Date(lead.createdAt), new Date(firstTs));
+      await db.execute(
+        sql`UPDATE leads SET "tiempoRespuestaHoras" = ${String(bizHours)}, "updatedAt" = NOW() WHERE id = ${data.leadId}`
+      );
+    }
+  }
 
   return result;
 }
@@ -1860,14 +1872,38 @@ export async function deleteContactAttempt(id: number) {
     ) WHERE id = ${attempt.leadId}`
   );
   
-  // Recalculate tiempoRespuestaHoras
-  await db.execute(
-    sql`UPDATE leads SET "tiempoRespuestaHoras" = CASE
-      WHEN fecha IS NOT NULL AND (SELECT MIN(timestamp) FROM contact_attempts WHERE "leadId" = ${attempt.leadId}) IS NOT NULL
-      THEN ROUND(EXTRACT(EPOCH FROM ((SELECT MIN(timestamp) FROM contact_attempts WHERE "leadId" = ${attempt.leadId}) - fecha)) / 3600.0, 2)
-      ELSE NULL
-    END, "updatedAt" = NOW() WHERE id = ${attempt.leadId}`
+  // Recalculate resultadoContacto from remaining attempts (latest wins), or PENDIENTE if none
+  const [latestRemaining] = await db.execute(
+    sql`SELECT resultado FROM contact_attempts WHERE "leadId" = ${attempt.leadId} ORDER BY timestamp DESC LIMIT 1`
   );
+  if (latestRemaining) {
+    const resultado = (latestRemaining as any).resultado;
+    const mapped = resultado === "MENSAJE ENVIADO" ? "NO CONTESTÓ" : resultado;
+    await db.execute(
+      sql`UPDATE leads SET "resultadoContacto" = ${mapped} WHERE id = ${attempt.leadId}`
+    );
+  } else {
+    await db.execute(
+      sql`UPDATE leads SET "resultadoContacto" = 'PENDIENTE' WHERE id = ${attempt.leadId}`
+    );
+  }
+
+  // Recalculate tiempoRespuestaHoras using business hours (createdAt → first attempt)
+  const [lead] = await db.select({ createdAt: leads.createdAt }).from(leads).where(eq(leads.id, attempt.leadId));
+  const [firstRow] = await db.execute(
+    sql`SELECT MIN(timestamp) as first_ts FROM contact_attempts WHERE "leadId" = ${attempt.leadId}`
+  );
+  const firstTs = (firstRow as any)?.first_ts;
+  if (lead?.createdAt && firstTs) {
+    const bizHours = calculateBusinessHours(new Date(lead.createdAt), new Date(firstTs));
+    await db.execute(
+      sql`UPDATE leads SET "tiempoRespuestaHoras" = ${String(bizHours)}, "updatedAt" = NOW() WHERE id = ${attempt.leadId}`
+    );
+  } else {
+    await db.execute(
+      sql`UPDATE leads SET "tiempoRespuestaHoras" = NULL, "updatedAt" = NOW() WHERE id = ${attempt.leadId}`
+    );
+  }
   
   return { success: true };
 }
