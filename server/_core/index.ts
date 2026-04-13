@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { webhookRouter } from "../webhook";
 import { apiRouter } from "../api-v1";
 import { startCronSync } from "../cron-meta-sync";
+import { startKpiMonitor } from "../cron-kpi-monitor";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -69,6 +70,8 @@ async function startServer() {
     console.log(`[SacaMedi CRM] Build: 2026-04-12-v2`);
     // Start the Meta Ads cron sync scheduler
     startCronSync();
+    // Start KPI pulse monitor (Slack alerts + reports)
+    startKpiMonitor();
   });
 }
 

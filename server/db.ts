@@ -3067,3 +3067,128 @@ export async function deleteRevenueScenario(id: number) {
   if (!db) throw new Error("Database not available");
   await db.update(revenueScenarios).set({ isActive: 0, updatedAt: new Date() }).where(eq(revenueScenarios.id, id));
 }
+
+// ============================================================
+// KPI PULSE MONITOR — queries for cron-kpi-monitor
+// ============================================================
+
+/**
+ * Leads AGENDA with resultadoContacto=PENDIENTE older than `thresholdMinutes`.
+ * These are leads that nobody has contacted yet.
+ */
+export async function getSpeedToLeadAlerts(thresholdMinutes: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000);
+  const rows = await db
+    .select({
+      id: leads.id,
+      nombre: leads.nombre,
+      setterAsignado: leads.setterAsignado,
+      createdAt: leads.createdAt,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.categoria, "AGENDA"),
+        eq(leads.resultadoContacto, "PENDIENTE"),
+        lte(leads.createdAt, cutoff)
+      )
+    )
+    .orderBy(asc(leads.createdAt));
+
+  return rows.map((r) => ({
+    ...r,
+    minutesSinceCreated: Math.round(
+      (Date.now() - new Date(r.createdAt).getTime()) / 60000
+    ),
+  }));
+}
+
+/**
+ * Leads without a setter assigned, created in the last 7 days, still PENDIENTE.
+ */
+export async function getUnassignedLeads() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return db
+    .select({
+      id: leads.id,
+      nombre: leads.nombre,
+      correo: leads.correo,
+      createdAt: leads.createdAt,
+    })
+    .from(leads)
+    .where(
+      and(
+        isNull(leads.setterAsignado),
+        gte(leads.createdAt, sevenDaysAgo),
+        eq(leads.resultadoContacto, "PENDIENTE")
+      )
+    )
+    .orderBy(asc(leads.createdAt));
+}
+
+/**
+ * Leads with outcome=SEGUIMIENTO whose updatedAt is older than `hoursThreshold`.
+ */
+export async function getStaleSeguimientos(hoursThreshold: number = 72) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - hoursThreshold * 60 * 60 * 1000);
+  return db
+    .select({
+      id: leads.id,
+      nombre: leads.nombre,
+      closer: leads.closer,
+      updatedAt: leads.updatedAt,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.outcome, "SEGUIMIENTO"),
+        lte(leads.updatedAt, cutoff)
+      )
+    )
+    .orderBy(asc(leads.updatedAt));
+}
+
+/**
+ * Quick counts for the last hour: new leads, contact attempts, confirmations.
+ */
+export async function getHourlySummaryStats() {
+  const db = await getDb();
+  if (!db) return { newLeads: 0, contacted: 0, confirmed: 0 };
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  const [newLeadsRow] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(leads)
+    .where(gte(leads.createdAt, oneHourAgo));
+
+  const [contactedRow] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(contactAttempts)
+    .where(gte(contactAttempts.createdAt, oneHourAgo));
+
+  const [confirmedRow] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.estadoConfirmacion, "CONFIRMADA"),
+        gte(leads.updatedAt, oneHourAgo)
+      )
+    );
+
+  return {
+    newLeads: Number(newLeadsRow?.count ?? 0),
+    contacted: Number(contactedRow?.count ?? 0),
+    confirmed: Number(confirmedRow?.count ?? 0),
+  };
+}

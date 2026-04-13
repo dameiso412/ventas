@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { sendSlackAlert, isSlackConfigured } from "./slack";
 
 export type NotificationPayload = {
   title: string;
@@ -9,8 +10,8 @@ const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
 /**
- * Stub: Owner notification. Currently a no-op.
- * TODO: Integrate with Slack or email for admin notifications.
+ * Send a notification to the owner via Slack.
+ * Falls back to console.log if Slack is not configured.
  */
 export async function notifyOwner(
   payload: NotificationPayload
@@ -22,6 +23,14 @@ export async function notifyOwner(
     });
   }
 
-  console.log(`[Notification] Owner notification (stub): ${payload.title}`);
-  return false;
+  if (!isSlackConfigured()) {
+    console.log(`[Notification] ${payload.title}: ${payload.content}`);
+    return false;
+  }
+
+  return sendSlackAlert({
+    severity: "warning",
+    title: payload.title,
+    body: payload.content,
+  });
 }
