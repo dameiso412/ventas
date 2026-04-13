@@ -13,7 +13,7 @@ import { es } from "date-fns/locale";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Edit2, Trash2, ExternalLink, User, Phone, Star, Target, DollarSign, ChevronRight, ChevronDown, Eye, Clock, CheckCircle2, Headphones, Flame, AlertTriangle, PhoneCall, MessageSquare, Mail, Instagram, MoreHorizontal, Send, MessageCircle, Megaphone, CalendarCheck, ArrowRightLeft, UserCheck, Zap, Calendar, List, LayoutGrid, Stethoscope } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, ExternalLink, User, Phone, Star, Target, DollarSign, ChevronRight, ChevronDown, Eye, Clock, CheckCircle2, Headphones, Flame, AlertTriangle, PhoneCall, MessageSquare, Mail, Instagram, MoreHorizontal, Send, MessageCircle, Megaphone, CalendarCheck, ArrowRightLeft, UserCheck, Zap, Calendar, List, LayoutGrid } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -173,15 +173,7 @@ export default function Citas() {
 
   // Inline mutation for card actions (no toast, no dialog close)
   const inlineUpdateMutation = trpc.leads.update.useMutation({
-    onSuccess: (result) => {
-      utils.leads.list.invalidate(); utils.dashboard.kpis.invalidate();
-      if (result.patientId) {
-        toast.success("Paciente creado automaticamente", {
-          description: "Ve al modo Clinica para gestionarlo",
-          action: { label: "Ver Paciente", onClick: () => window.location.href = "/clinica" },
-        });
-      }
-    },
+    onSuccess: () => { utils.leads.list.invalidate(); utils.dashboard.kpis.invalidate(); },
     onError: (err) => toast.error(err.message),
   });
 
@@ -713,11 +705,6 @@ export default function Citas() {
                           onClick={() => { if (confirm("¿Convertir este lead en una Agenda?")) handleConvertToAgenda(lead.id); }}
                         >
                           <CalendarCheck className="h-3 w-3" /> Convertir a Agenda
-                        </Button>
-                      )}
-                      {lead.patientId && (
-                        <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 text-pink-400 border-pink-500/30 hover:bg-pink-500/10" onClick={() => window.location.href = "/clinica"}>
-                          <Stethoscope className="h-3 w-3" /> Ver Paciente
                         </Button>
                       )}
                       {vista === "AGENDAS" && lead.asistencia === "NO SHOW" && (

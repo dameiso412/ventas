@@ -4,7 +4,6 @@ import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
 import { getSubscriberInfo, setCustomField } from "./manychat";
 import * as db from "./db";
-import * as clinicaDb from "./clinica-db";
 
 const webhookRouter = Router();
 
@@ -1363,63 +1362,6 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
     return res.status(200).json({ success: true, action: "subscriber_processed", leadId: lead?.id });
   } catch (err: any) {
     console.error("[Webhook:ManyChat] Unhandled error:", err.message, err.stack);
-    return res.status(200).json({ success: true, error: "internal_error" });
-  }
-});
-
-// ============================================================
-// WEBHOOK: POST /api/webhook/patient
-// Triggered externally to create/update clinic patients.
-// Auth: x-webhook-token header validated against clinic_organizations.webhook_token
-// ============================================================
-webhookRouter.post("/patient", async (req: Request, res: Response) => {
-  try {
-    const token = req.headers["x-webhook-token"] as string;
-    if (!token) {
-      return res.status(401).json({ success: false, error: "Missing x-webhook-token header" });
-    }
-
-    const org = await clinicaDb.getOrganizationByWebhookToken(token);
-    if (!org) {
-      return res.status(401).json({ success: false, error: "Invalid webhook token" });
-    }
-
-    const body = req.body;
-    const patientName = body.patient_name || body.patientName || body.name || body.nombre;
-    if (!patientName) {
-      await clinicaDb.createFailedWebhook({
-        organizationId: org.id,
-        webhookData: body,
-        errorMessage: "Missing patient_name field",
-      });
-      return res.status(400).json({ success: false, error: "patient_name is required" });
-    }
-
-    const patientData = {
-      organizationId: org.id,
-      patientName,
-      patientEmail: body.patient_email || body.patientEmail || body.email || body.correo || null,
-      patientPhone: body.patient_phone || body.patientPhone || body.phone || body.telefono || null,
-      treatmentType: body.treatment_type || body.treatmentType || body.treatment || body.tratamiento || null,
-      initialAmount: body.initial_amount || body.initialAmount || body.amount || body.monto || "0",
-      scheduledDate: body.scheduled_date || body.scheduledDate ? new Date(body.scheduled_date || body.scheduledDate) : null,
-      depositAmount: body.deposit_amount || body.depositAmount || null,
-      hasDeposit: body.has_deposit || body.hasDeposit || false,
-    };
-
-    const patientId = await clinicaDb.createPatient(patientData as any);
-
-    await clinicaDb.createWebhookLog({
-      organizationId: org.id,
-      action: "patient_created",
-      patientData: { ...body, generatedPatientId: patientId },
-      status: "success",
-    });
-
-    console.log(`[Webhook:Patient] Created patient ${patientId} for org ${org.name}`);
-    return res.status(200).json({ success: true, patientId });
-  } catch (err: any) {
-    console.error("[Webhook:Patient] Error:", err.message, err.stack);
     return res.status(200).json({ success: true, error: "internal_error" });
   }
 });
