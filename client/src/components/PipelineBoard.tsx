@@ -1,50 +1,20 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Clock, CheckCircle2, XCircle, AlertTriangle, UserCheck, ArrowRightLeft, DollarSign, ChevronDown, Megaphone, User, Phone } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
+import { toast } from "sonner";
 import { ScoreBadge, ContactoBadge } from "@/components/LeadBadges";
-
-// --- Stage definitions ---
-
-interface StageConfig {
-  key: string;
-  label: string;
-  dot: string;   // tailwind bg color for the dot
-  text: string;   // tailwind text color
-  bg: string;     // tailwind bg for count badge
-}
-
-const AGENDAS_STAGES: StageConfig[] = [
-  { key: "PENDIENTE",    label: "Pendiente",    dot: "bg-slate-400",   text: "text-slate-400",   bg: "bg-slate-500/20" },
-  { key: "CONFIRMADA",   label: "Confirmada",   dot: "bg-blue-400",    text: "text-blue-400",    bg: "bg-blue-500/20" },
-  { key: "CANCELADA",    label: "Cancelada",    dot: "bg-red-400",     text: "text-red-400",     bg: "bg-red-500/20" },
-  { key: "NO_SHOW",      label: "No Show",      dot: "bg-orange-400",  text: "text-orange-400",  bg: "bg-orange-500/20" },
-  { key: "ASISTIO",      label: "Asistio",      dot: "bg-green-400",   text: "text-green-400",   bg: "bg-green-500/20" },
-  { key: "SEGUIMIENTO",  label: "Seguimiento",  dot: "bg-amber-400",   text: "text-amber-400",   bg: "bg-amber-500/20" },
-  { key: "VENTA",        label: "Venta",        dot: "bg-emerald-400", text: "text-emerald-400", bg: "bg-emerald-500/20" },
-  { key: "PERDIDA",      label: "Perdida",      dot: "bg-red-400",     text: "text-red-400",     bg: "bg-red-500/20" },
-];
-
-const LEADS_STAGES: StageConfig[] = [
-  { key: "NUEVO",              label: "Nuevo",      dot: "bg-blue-400",   text: "text-blue-400",   bg: "bg-blue-500/20" },
-  { key: "CONTACTADO",         label: "Contactado", dot: "bg-amber-400",  text: "text-amber-400",  bg: "bg-amber-500/20" },
-  { key: "CALIFICADO",         label: "Calificado", dot: "bg-green-400",  text: "text-green-400",  bg: "bg-green-500/20" },
-  { key: "CONVERTIDO_AGENDA",  label: "Convertido", dot: "bg-purple-400", text: "text-purple-400", bg: "bg-purple-500/20" },
-  { key: "DESCARTADO",         label: "Descartado", dot: "bg-red-400",    text: "text-red-400",    bg: "bg-red-500/20" },
-];
+import {
+  AGENDAS_STAGES,
+  LEADS_STAGES,
+  getAgendaPipelineStage,
+  getLeadsPipelineStage,
+  getTransitionFields,
+  type StageConfig,
+} from "@/lib/pipeline-stages";
 
 // --- Helpers ---
-
-function getAgendaPipelineStage(lead: any): string {
-  if (lead.outcome === "VENTA") return "VENTA";
-  if (lead.outcome === "PERDIDA") return "PERDIDA";
-  if (lead.outcome === "SEGUIMIENTO") return "SEGUIMIENTO";
-  if (lead.asistencia === "NO SHOW") return "NO_SHOW";
-  if (lead.asistencia === "ASISTIÓ") return "ASISTIO";
-  if (lead.estadoConfirmacion === "CANCELADA") return "CANCELADA";
-  if (lead.estadoConfirmacion === "CONFIRMADA") return "CONFIRMADA";
-  return "PENDIENTE";
-}
 
 function getLeadValue(lead: any): number {
   const cc = parseFloat(lead.cashCollected || "0");
@@ -75,22 +45,38 @@ interface PipelineBoardProps {
   leads: any[];
   vista: "AGENDAS" | "LEADS";
   onEditLead: (lead: any) => void;
+  onStageDrop?: (leadId: number, fields: Record<string, any>, revert: () => void) => void;
 }
 
-export function PipelineBoard({ leads, vista, onEditLead }: PipelineBoardProps) {
+export function PipelineBoard({ leads, vista, onEditLead, onStageDrop }: PipelineBoardProps) {
   const stages = vista === "AGENDAS" ? AGENDAS_STAGES : LEADS_STAGES;
   const [expandedColumns, setExpandedColumns] = useState<Set<string>>(new Set());
+  const [optimisticOverrides, setOptimisticOverrides] = useState<Map<number, Record<string, any>>>(new Map());
+
+  // Build a lead lookup for quick access during drag
+  const leadMap = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const lead of leads) map.set(lead.id, lead);
+    return map;
+  }, [leads]);
+
+  // Apply optimistic overrides to leads before deriving stages
+  const effectiveLeads = useMemo(() => {
+    if (optimisticOverrides.size === 0) return leads;
+    return leads.map(lead => {
+      const override = optimisticOverrides.get(lead.id);
+      return override ? { ...lead, ...override } : lead;
+    });
+  }, [leads, optimisticOverrides]);
 
   const columnData = useMemo(() => {
     const grouped = new Map<string, any[]>();
-    for (const stage of stages) {
-      grouped.set(stage.key, []);
-    }
+    for (const stage of stages) grouped.set(stage.key, []);
 
-    for (const lead of leads) {
+    for (const lead of effectiveLeads) {
       const stageKey = vista === "AGENDAS"
         ? getAgendaPipelineStage(lead)
-        : (lead.estadoLead || "NUEVO");
+        : getLeadsPipelineStage(lead);
       const arr = grouped.get(stageKey);
       if (arr) arr.push(lead);
       else grouped.get(stages[0].key)!.push(lead);
@@ -101,7 +87,7 @@ export function PipelineBoard({ leads, vista, onEditLead }: PipelineBoardProps) 
       const total = stageLeads.reduce((sum, lead) => sum + getLeadValue(lead), 0);
       return { ...stage, leads: stageLeads, count: stageLeads.length, total };
     });
-  }, [leads, vista, stages]);
+  }, [effectiveLeads, vista, stages]);
 
   const toggleExpand = (key: string) => {
     setExpandedColumns(prev => {
@@ -112,29 +98,77 @@ export function PipelineBoard({ leads, vista, onEditLead }: PipelineBoardProps) 
     });
   };
 
+  const handleDragEnd = useCallback((result: DropResult) => {
+    const { draggableId, source, destination } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId) return;
+    if (!onStageDrop) return;
+
+    const leadId = parseInt(draggableId, 10);
+    const lead = leadMap.get(leadId);
+    if (!lead) return;
+
+    const transition = getTransitionFields(vista, source.droppableId, destination.droppableId, lead);
+
+    if (!transition.allowed) {
+      toast.error(transition.reason || "Transición no permitida");
+      return;
+    }
+
+    // Apply optimistic override
+    const fields = transition.fields!;
+    setOptimisticOverrides(prev => {
+      const next = new Map(prev);
+      next.set(leadId, fields);
+      return next;
+    });
+
+    // Revert function clears the override
+    const revert = () => {
+      setOptimisticOverrides(prev => {
+        const next = new Map(prev);
+        next.delete(leadId);
+        return next;
+      });
+    };
+
+    onStageDrop(leadId, fields, revert);
+  }, [vista, leadMap, onStageDrop]);
+
+  // Clear overrides when leads prop changes (server data refreshed)
+  const prevLeadsRef = useRef(leads);
+  if (leads !== prevLeadsRef.current) {
+    prevLeadsRef.current = leads;
+    if (optimisticOverrides.size > 0) {
+      setOptimisticOverrides(new Map());
+    }
+  }
+
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-3 min-w-max px-1">
-        {columnData.map(col => (
-          <PipelineColumn
-            key={col.key}
-            stage={col}
-            leads={col.leads}
-            count={col.count}
-            total={col.total}
-            vista={vista}
-            expanded={expandedColumns.has(col.key)}
-            onToggleExpand={() => toggleExpand(col.key)}
-            onEditLead={onEditLead}
-          />
-        ))}
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <div className="overflow-x-auto pb-4">
+        <div className="flex gap-3 min-w-max px-1">
+          {columnData.map(col => (
+            <PipelineColumn
+              key={col.key}
+              stage={col}
+              leads={col.leads}
+              count={col.count}
+              total={col.total}
+              vista={vista}
+              expanded={expandedColumns.has(col.key)}
+              onToggleExpand={() => toggleExpand(col.key)}
+              onEditLead={onEditLead}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </DragDropContext>
   );
 }
 
 interface PipelineColumnProps {
-  stage: StageConfig;
+  stage: StageConfig & { leads: any[]; count: number; total: number };
   leads: any[];
   count: number;
   total: number;
@@ -149,11 +183,11 @@ function PipelineColumn({ stage, leads, count, total, vista, expanded, onToggleE
   const hiddenCount = leads.length - visibleLeads.length;
 
   return (
-    <div className="w-[280px] flex flex-col bg-muted/10 rounded-lg border border-border/30">
+    <div className="w-[260px] flex flex-col bg-muted/10 rounded-lg border border-border/30">
       {/* Column Header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/20">
         <div className={`h-2.5 w-2.5 rounded-full ${stage.dot} shrink-0`} />
-        <span className="text-sm font-semibold text-foreground truncate">{stage.label}</span>
+        <span className="text-xs font-semibold text-foreground truncate">{stage.label}</span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${stage.bg} ${stage.text}`}>
           {count}
         </span>
@@ -162,33 +196,44 @@ function PipelineColumn({ stage, leads, count, total, vista, expanded, onToggleE
         </span>
       </div>
 
-      {/* Cards */}
-      <div className="flex-1 overflow-y-auto max-h-[calc(100vh-300px)] p-2 space-y-1.5">
-        {visibleLeads.length === 0 ? (
-          <p className="text-[10px] text-muted-foreground/50 text-center py-6">Sin leads</p>
-        ) : (
-          visibleLeads.map(lead => (
-            <PipelineCard key={lead.id} lead={lead} vista={vista} onEdit={onEditLead} />
-          ))
-        )}
-        {hiddenCount > 0 && (
-          <button
-            onClick={onToggleExpand}
-            className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1.5 flex items-center justify-center gap-1 transition-colors"
+      {/* Cards — Droppable area */}
+      <Droppable droppableId={stage.key}>
+        {(provided, snapshot) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className={`flex-1 overflow-y-auto max-h-[calc(100vh-300px)] p-2 space-y-1.5 transition-colors ${
+              snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-inset ring-primary/20 rounded-b-lg" : ""
+            }`}
           >
-            <ChevronDown className="h-3 w-3" />
-            +{hiddenCount} mas
-          </button>
+            {visibleLeads.length === 0 && !snapshot.isDraggingOver ? (
+              <p className="text-[10px] text-muted-foreground/50 text-center py-6">Sin leads</p>
+            ) : (
+              visibleLeads.map((lead, index) => (
+                <PipelineCard key={lead.id} lead={lead} vista={vista} onEdit={onEditLead} index={index} />
+              ))
+            )}
+            {provided.placeholder}
+            {hiddenCount > 0 && (
+              <button
+                onClick={onToggleExpand}
+                className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1.5 flex items-center justify-center gap-1 transition-colors"
+              >
+                <ChevronDown className="h-3 w-3" />
+                +{hiddenCount} mas
+              </button>
+            )}
+            {expanded && leads.length > INITIAL_VISIBLE && (
+              <button
+                onClick={onToggleExpand}
+                className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1.5 flex items-center justify-center gap-1 transition-colors"
+              >
+                Mostrar menos
+              </button>
+            )}
+          </div>
         )}
-        {expanded && leads.length > INITIAL_VISIBLE && (
-          <button
-            onClick={onToggleExpand}
-            className="w-full text-[10px] text-muted-foreground hover:text-foreground py-1.5 flex items-center justify-center gap-1 transition-colors"
-          >
-            Mostrar menos
-          </button>
-        )}
-      </div>
+      </Droppable>
     </div>
   );
 }
@@ -197,53 +242,63 @@ interface PipelineCardProps {
   lead: any;
   vista: "AGENDAS" | "LEADS";
   onEdit: (lead: any) => void;
+  index: number;
 }
 
-function PipelineCard({ lead, vista, onEdit }: PipelineCardProps) {
+function PipelineCard({ lead, vista, onEdit, index }: PipelineCardProps) {
   const borderColor = SCORE_BORDER[lead.scoreLabel] || "border-l-border";
   const value = getLeadValue(lead);
 
   return (
-    <div
-      onClick={() => onEdit(lead)}
-      className={`rounded-md border border-border/30 border-l-2 ${borderColor} bg-card/40 p-2.5 cursor-pointer hover:border-primary/40 hover:bg-card/80 transition-colors`}
-    >
-      {/* Line 1: Name + Score */}
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-xs font-medium text-foreground truncate flex-1">
-          {lead.nombre || "Sin nombre"}
-        </span>
-        <div className="shrink-0 scale-90 origin-right">
-          <ScoreBadge label={lead.scoreLabel} />
+    <Draggable draggableId={String(lead.id)} index={index}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          onClick={() => onEdit(lead)}
+          className={`rounded-md border border-border/30 border-l-2 ${borderColor} bg-card/40 p-2.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:bg-card/80 transition-all select-none ${
+            snapshot.isDragging ? "opacity-80 shadow-xl ring-2 ring-primary/40 scale-[1.02] z-50" : ""
+          }`}
+        >
+          {/* Line 1: Name + Score */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs font-medium text-foreground truncate flex-1">
+              {lead.nombre || "Sin nombre"}
+            </span>
+            <div className="shrink-0 scale-90 origin-right">
+              <ScoreBadge label={lead.scoreLabel} />
+            </div>
+          </div>
+
+          {/* Line 2: Origin + Value */}
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1">
+            <span className="truncate">{lead.origen || "—"}</span>
+            {value > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-emerald-400 font-medium">${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+              </>
+            )}
+          </div>
+
+          {/* Line 3: Setter + Date/Badge */}
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            {lead.setterAsignado ? (
+              <span className="truncate">{lead.setterAsignado}</span>
+            ) : (
+              <span className="text-muted-foreground/40">Sin setter</span>
+            )}
+            <span className="ml-auto shrink-0">
+              {vista === "AGENDAS" && lead.fecha ? (
+                <span>{format(new Date(lead.fecha), "dd/MM HH:mm", { locale: es })}</span>
+              ) : (
+                <ContactoBadge resultado={lead.resultadoContacto} />
+              )}
+            </span>
+          </div>
         </div>
-      </div>
-
-      {/* Line 2: Origin + Value */}
-      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1">
-        <span className="truncate">{lead.origen || "—"}</span>
-        {value > 0 && (
-          <>
-            <span>·</span>
-            <span className="text-emerald-400 font-medium">${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-          </>
-        )}
-      </div>
-
-      {/* Line 3: Setter + Date/Badge */}
-      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-        {lead.setterAsignado ? (
-          <span className="truncate">{lead.setterAsignado}</span>
-        ) : (
-          <span className="text-muted-foreground/40">Sin setter</span>
-        )}
-        <span className="ml-auto shrink-0">
-          {vista === "AGENDAS" && lead.fecha ? (
-            <span>{format(new Date(lead.fecha), "dd/MM HH:mm", { locale: es })}</span>
-          ) : (
-            <ContactoBadge resultado={lead.resultadoContacto} />
-          )}
-        </span>
-      </div>
-    </div>
+      )}
+    </Draggable>
   );
 }

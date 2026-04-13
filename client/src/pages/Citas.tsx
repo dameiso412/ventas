@@ -177,6 +177,12 @@ export default function Citas() {
     onError: (err) => toast.error(err.message),
   });
 
+  // Pipeline drag-and-drop mutation
+  const pipelineDropMutation = trpc.leads.update.useMutation({
+    onSuccess: () => { utils.leads.list.invalidate(); utils.dashboard.kpis.invalidate(); },
+    onError: (err) => toast.error(`Error al mover: ${err.message}`),
+  });
+
   const deleteMutation = trpc.leads.delete.useMutation({
     onSuccess: () => { utils.leads.list.invalidate(); utils.dashboard.kpis.invalidate(); toast.success("Lead eliminado"); },
     onError: (err) => toast.error(err.message),
@@ -491,6 +497,12 @@ export default function Citas() {
           leads={filteredLeads}
           vista={vista}
           onEditLead={setEditingLead}
+          onStageDrop={(leadId, fields, revert) => {
+            pipelineDropMutation.mutate(
+              { id: leadId, data: fields },
+              { onError: () => revert() }
+            );
+          }}
         />
       ) : (
         <div className="space-y-1">
