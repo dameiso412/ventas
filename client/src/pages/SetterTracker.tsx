@@ -12,7 +12,7 @@ import { useState, useMemo } from "react";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, CalendarIcon, Users } from "lucide-react";
+import { Plus, Pencil, CalendarIcon, Users, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useStatusColors } from "@/hooks/useStatusColors";
 import { format } from "date-fns";
@@ -48,6 +48,9 @@ const emptyForm = {
   cierresAtribuidos: 0, revenueAtribuido: "0", cashAtribuido: "0", notas: "",
   // Intro fields
   introAgendadas: 0, introLive: 0, introADemo: 0,
+  // IG DM fields
+  igConversacionesIniciadas: 0, igRespuestasRecibidas: 0, igCalificados: 0,
+  igAgendasEnviadas: 0, igAgendasReservadas: 0,
 };
 
 export default function SetterTracker() {
@@ -65,6 +68,9 @@ export default function SetterTracker() {
   // Conditional intro toggle for create and edit
   const [newHasIntros, setNewHasIntros] = useState(false);
   const [editHasIntros, setEditHasIntros] = useState(false);
+  // Conditional IG DM toggle for create and edit
+  const [newHasIg, setNewHasIg] = useState(false);
+  const [editHasIg, setEditHasIg] = useState(false);
   const sc = useStatusColors();
 
   const filters = useMemo(() => ({
@@ -82,6 +88,11 @@ export default function SetterTracker() {
     return activities.some(a => (a.introAgendadas || 0) > 0 || (a.introLive || 0) > 0 || (a.introADemo || 0) > 0);
   }, [activities]);
 
+  const hasIgData = useMemo(() => {
+    if (!activities) return false;
+    return activities.some(a => (a.igConversacionesIniciadas || 0) > 0 || (a.igRespuestasRecibidas || 0) > 0 || (a.igCalificados || 0) > 0 || (a.igAgendasEnviadas || 0) > 0 || (a.igAgendasReservadas || 0) > 0);
+  }, [activities]);
+
   const createMutation = trpc.setterActivities.create.useMutation({
     onSuccess: () => {
       utils.setterActivities.list.invalidate();
@@ -90,6 +101,7 @@ export default function SetterTracker() {
       setNewActivity(emptyForm);
       setNewDate(new Date());
       setNewHasIntros(false);
+      setNewHasIg(false);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -101,6 +113,7 @@ export default function SetterTracker() {
       toast.success("Registro actualizado");
       setEditingId(null);
       setEditHasIntros(false);
+      setEditHasIg(false);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -132,7 +145,12 @@ export default function SetterTracker() {
       introAgendadas: acc.introAgendadas + (a.introAgendadas || 0),
       introLive: acc.introLive + (a.introLive || 0),
       introADemo: acc.introADemo + (a.introADemo || 0),
-    }), { intentos: 0, intros: 0, aseguradas: 0, calendario: 0, confirmadas: 0, asistidas: 0, cierres: 0, revenue: 0, cash: 0, introAgendadas: 0, introLive: 0, introADemo: 0 });
+      igConversaciones: acc.igConversaciones + (a.igConversacionesIniciadas || 0),
+      igRespuestas: acc.igRespuestas + (a.igRespuestasRecibidas || 0),
+      igCalificados: acc.igCalificados + (a.igCalificados || 0),
+      igAgEnviadas: acc.igAgEnviadas + (a.igAgendasEnviadas || 0),
+      igAgReservadas: acc.igAgReservadas + (a.igAgendasReservadas || 0),
+    }), { intentos: 0, intros: 0, aseguradas: 0, calendario: 0, confirmadas: 0, asistidas: 0, cierres: 0, revenue: 0, cash: 0, introAgendadas: 0, introLive: 0, introADemo: 0, igConversaciones: 0, igRespuestas: 0, igCalificados: 0, igAgEnviadas: 0, igAgReservadas: 0 });
   }, [activities]);
 
   const tasaRespuesta = totals && totals.intentos > 0 ? ((totals.intros / totals.intentos) * 100).toFixed(1) : "0";
@@ -142,6 +160,10 @@ export default function SetterTracker() {
   // Intro rates
   const introShowRate = totals && totals.introAgendadas > 0 ? ((totals.introLive / totals.introAgendadas) * 100).toFixed(1) : "0";
   const introDemoRate = totals && totals.introLive > 0 ? ((totals.introADemo / totals.introLive) * 100).toFixed(1) : "0";
+
+  // IG rates
+  const igRespRate = totals && totals.igConversaciones > 0 ? ((totals.igRespuestas / totals.igConversaciones) * 100).toFixed(1) : "0";
+  const igCalifRate = totals && totals.igRespuestas > 0 ? ((totals.igCalificados / totals.igRespuestas) * 100).toFixed(1) : "0";
 
   const handleCreate = () => {
     const data = {
@@ -156,6 +178,14 @@ export default function SetterTracker() {
       data.introLive = 0;
       data.introADemo = 0;
     }
+    // If no IG, zero out IG fields
+    if (!newHasIg) {
+      data.igConversacionesIniciadas = 0;
+      data.igRespuestasRecibidas = 0;
+      data.igCalificados = 0;
+      data.igAgendasEnviadas = 0;
+      data.igAgendasReservadas = 0;
+    }
     createMutation.mutate(data);
   };
 
@@ -164,6 +194,8 @@ export default function SetterTracker() {
     setEditDate(new Date(a.fecha));
     const hasIntro = (a.introAgendadas || 0) > 0 || (a.introLive || 0) > 0 || (a.introADemo || 0) > 0;
     setEditHasIntros(hasIntro);
+    const hasIg = (a.igConversacionesIniciadas || 0) > 0 || (a.igRespuestasRecibidas || 0) > 0 || (a.igCalificados || 0) > 0 || (a.igAgendasEnviadas || 0) > 0 || (a.igAgendasReservadas || 0) > 0;
+    setEditHasIg(hasIg);
     setEditForm({
       setter: a.setter || "",
       intentosLlamada: a.intentosLlamada || 0,
@@ -179,6 +211,11 @@ export default function SetterTracker() {
       introAgendadas: a.introAgendadas || 0,
       introLive: a.introLive || 0,
       introADemo: a.introADemo || 0,
+      igConversacionesIniciadas: a.igConversacionesIniciadas || 0,
+      igRespuestasRecibidas: a.igRespuestasRecibidas || 0,
+      igCalificados: a.igCalificados || 0,
+      igAgendasEnviadas: a.igAgendasEnviadas || 0,
+      igAgendasReservadas: a.igAgendasReservadas || 0,
     });
   };
 
@@ -202,6 +239,11 @@ export default function SetterTracker() {
       introAgendadas: editHasIntros ? editForm.introAgendadas : 0,
       introLive: editHasIntros ? editForm.introLive : 0,
       introADemo: editHasIntros ? editForm.introADemo : 0,
+      igConversacionesIniciadas: editHasIg ? editForm.igConversacionesIniciadas : 0,
+      igRespuestasRecibidas: editHasIg ? editForm.igRespuestasRecibidas : 0,
+      igCalificados: editHasIg ? editForm.igCalificados : 0,
+      igAgendasEnviadas: editHasIg ? editForm.igAgendasEnviadas : 0,
+      igAgendasReservadas: editHasIg ? editForm.igAgendasReservadas : 0,
     };
     updateMutation.mutate({ id: editingId, data });
   };
@@ -237,6 +279,8 @@ export default function SetterTracker() {
     submitLabel: string,
     hasIntros: boolean,
     setHasIntros: (v: boolean) => void,
+    hasIg: boolean,
+    setHasIg: (v: boolean) => void,
   ) => (
     <div className="space-y-3 mt-2">
       <div>
@@ -303,6 +347,52 @@ export default function SetterTracker() {
         )}
       </div>
 
+      {/* Conditional IG DM Section */}
+      <div className="border-t border-border/40 pt-3 mt-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-pink-400" />
+            <Label className="text-xs font-medium">¿Hiciste DMs de Instagram hoy?</Label>
+          </div>
+          <Switch checked={hasIg} onCheckedChange={setHasIg} />
+        </div>
+        {hasIg && (
+          <div className="mt-3 p-3 rounded-lg bg-pink-500/5 border border-pink-500/20 space-y-2">
+            <p className="text-xs text-pink-400 font-medium mb-2">Instagram DMs</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-xs">Conversaciones</Label>
+                <Input type="number" min={0} value={form.igConversacionesIniciadas} onChange={e => setForm(p => ({ ...p, igConversacionesIniciadas: parseInt(e.target.value) || 0 }))} className="border-pink-500/30" />
+              </div>
+              <div>
+                <Label className="text-xs">Respuestas</Label>
+                <Input type="number" min={0} value={form.igRespuestasRecibidas} onChange={e => setForm(p => ({ ...p, igRespuestasRecibidas: parseInt(e.target.value) || 0 }))} className="border-pink-500/30" />
+              </div>
+              <div>
+                <Label className="text-xs">Calificados</Label>
+                <Input type="number" min={0} value={form.igCalificados} onChange={e => setForm(p => ({ ...p, igCalificados: parseInt(e.target.value) || 0 }))} className="border-pink-500/30" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Agendas Enviadas</Label>
+                <Input type="number" min={0} value={form.igAgendasEnviadas} onChange={e => setForm(p => ({ ...p, igAgendasEnviadas: parseInt(e.target.value) || 0 }))} className="border-pink-500/30" />
+              </div>
+              <div>
+                <Label className="text-xs">Agendas Reservadas</Label>
+                <Input type="number" min={0} value={form.igAgendasReservadas} onChange={e => setForm(p => ({ ...p, igAgendasReservadas: parseInt(e.target.value) || 0 }))} className="border-pink-500/30" />
+              </div>
+            </div>
+            {form.igConversacionesIniciadas > 0 && (
+              <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                <span>Tasa Resp: <strong className="text-pink-400">{form.igConversacionesIniciadas > 0 ? ((form.igRespuestasRecibidas / form.igConversacionesIniciadas) * 100).toFixed(0) : 0}%</strong></span>
+                <span>Calif: <strong className="text-pink-400">{form.igRespuestasRecibidas > 0 ? ((form.igCalificados / form.igRespuestasRecibidas) * 100).toFixed(0) : 0}%</strong></span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <Button onClick={onSubmit} className="w-full" disabled={isPending}>
         {isPending ? "Guardando..." : submitLabel}
       </Button>
@@ -326,13 +416,13 @@ export default function SetterTracker() {
             <SelectTrigger className="w-[110px] bg-card/50"><SelectValue placeholder="Semana" /></SelectTrigger>
             <SelectContent><SelectItem value="all">Todas</SelectItem>{[1,2,3,4,5].map(s => <SelectItem key={s} value={s.toString()}>Sem {s}</SelectItem>)}</SelectContent>
           </Select>
-          <Dialog open={showAdd} onOpenChange={(open) => { setShowAdd(open); if (open) { setNewDate(new Date()); setNewHasIntros(false); } }}>
+          <Dialog open={showAdd} onOpenChange={(open) => { setShowAdd(open); if (open) { setNewDate(new Date()); setNewHasIntros(false); setNewHasIg(false); } }}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Registrar</Button>
             </DialogTrigger>
             <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Registrar Actividad de Setter</DialogTitle></DialogHeader>
-              {renderForm(newActivity, setNewActivity, newDate, setNewDate, newDateOpen, setNewDateOpen, handleCreate, createMutation.isPending, "Registrar Actividad", newHasIntros, setNewHasIntros)}
+              {renderForm(newActivity, setNewActivity, newDate, setNewDate, newDateOpen, setNewDateOpen, handleCreate, createMutation.isPending, "Registrar Actividad", newHasIntros, setNewHasIntros, newHasIg, setNewHasIg)}
             </DialogContent>
           </Dialog>
         </div>
@@ -369,14 +459,33 @@ export default function SetterTracker() {
               </div>
             </div>
           )}
+
+          {/* Conditional IG Metrics */}
+          {hasIgData && (
+            <div className="mt-2">
+              <p className="text-xs text-pink-400 font-medium uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <MessageCircle className="h-3.5 w-3.5" />
+                Instagram DMs
+              </p>
+              <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2">
+                <MetricCard title="Conversaciones" value={totals.igConversaciones} />
+                <MetricCard title="Respuestas" value={totals.igRespuestas} />
+                <MetricCard title="Tasa Resp." value={`${igRespRate}%`} color={Number(igRespRate) >= 30 ? "#22c55e" : "#f59e0b"} />
+                <MetricCard title="Calificados" value={totals.igCalificados} />
+                <MetricCard title="Tasa Calif." value={`${igCalifRate}%`} color={Number(igCalifRate) >= 40 ? "#22c55e" : "#f59e0b"} />
+                <MetricCard title="Ag. Enviadas" value={totals.igAgEnviadas} />
+                <MetricCard title="Ag. Reservadas" value={totals.igAgReservadas} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Edit Dialog */}
-      <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open) { setEditingId(null); setEditHasIntros(false); } }}>
+      <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open) { setEditingId(null); setEditHasIntros(false); setEditHasIg(false); } }}>
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Registro de Setter</DialogTitle></DialogHeader>
-          {renderForm(editForm, setEditForm, editDate, setEditDate, editDateOpen, setEditDateOpen, handleUpdate, updateMutation.isPending, "Guardar Cambios", editHasIntros, setEditHasIntros)}
+          {renderForm(editForm, setEditForm, editDate, setEditDate, editDateOpen, setEditDateOpen, handleUpdate, updateMutation.isPending, "Guardar Cambios", editHasIntros, setEditHasIntros, editHasIg, setEditHasIg)}
         </DialogContent>
       </Dialog>
 
@@ -419,6 +528,15 @@ export default function SetterTracker() {
                     <th className="text-center p-3 font-medium text-blue-400 text-xs">Intro Show%</th>
                   </>
                 )}
+                {hasIgData && (
+                  <>
+                    <th className="text-center p-3 font-medium text-pink-400 text-xs border-l border-pink-500/20">IG Conv.</th>
+                    <th className="text-center p-3 font-medium text-pink-400 text-xs">IG Resp.</th>
+                    <th className="text-center p-3 font-medium text-pink-400 text-xs">IG Calif.</th>
+                    <th className="text-center p-3 font-medium text-pink-400 text-xs">IG Ag.Env</th>
+                    <th className="text-center p-3 font-medium text-pink-400 text-xs">IG Ag.Res</th>
+                  </>
+                )}
                 <th className="text-left p-3 font-medium text-muted-foreground text-xs">Notas</th>
                 <th className="text-center p-3 font-medium text-muted-foreground text-xs">Acc.</th>
               </tr>
@@ -455,6 +573,15 @@ export default function SetterTracker() {
                         <td className="p-3 text-center text-xs font-medium text-blue-400">{introSR !== "-" ? `${introSR}%` : "-"}</td>
                       </>
                     )}
+                    {hasIgData && (
+                      <>
+                        <td className="p-3 text-center text-xs border-l border-pink-500/10">{a.igConversacionesIniciadas || 0}</td>
+                        <td className="p-3 text-center text-xs">{a.igRespuestasRecibidas || 0}</td>
+                        <td className="p-3 text-center text-xs">{a.igCalificados || 0}</td>
+                        <td className="p-3 text-center text-xs">{a.igAgendasEnviadas || 0}</td>
+                        <td className="p-3 text-center text-xs">{a.igAgendasReservadas || 0}</td>
+                      </>
+                    )}
                     <td className="p-3 text-xs text-muted-foreground max-w-[150px] truncate">{a.notas || "-"}</td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1">
@@ -470,7 +597,7 @@ export default function SetterTracker() {
                 );
               })}
               {(!activities || activities.length === 0) && (
-                <tr><td colSpan={hasIntroData ? 17 : 13} className="p-8 text-center text-muted-foreground">
+                <tr><td colSpan={13 + (hasIntroData ? 4 : 0) + (hasIgData ? 5 : 0)} className="p-8 text-center text-muted-foreground">
                   {isLoading ? "Cargando..." : "Sin registros. Usa el botón 'Registrar' para agregar actividades."}
                 </td></tr>
               )}

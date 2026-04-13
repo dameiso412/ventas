@@ -28,7 +28,7 @@ import { calculateBusinessHours } from "@shared/businessHours";
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-const ORIGENES = ["ADS", "REFERIDO", "ORGANICO"];
+const ORIGENES = ["ADS", "REFERIDO", "ORGANICO", "INSTAGRAM"];
 const RESULTADOS_CONTACTO = ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "WHATSAPP LIMPIADO", "PENDIENTE"];
 const ESTADOS_CONFIRMACION = ["CONFIRMADA", "NO CONFIRMADA", "CANCELADA", "REAGENDADA", "PENDIENTE"];
 const ASISTENCIAS = ["ASISTIÓ", "NO SHOW", "PENDIENTE"];

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
+import { ENV } from "./_core/env";
+import { getSubscriberInfo, setCustomField } from "./manychat";
 import * as db from "./db";
 
 const webhookRouter = Router();
@@ -1202,6 +1204,165 @@ webhookRouter.get("/api/webhook/logs", async (req: Request, res: Response) => {
     res.json({ success: true, logs, count: logs.length });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
+// WEBHOOK: POST /api/webhook/manychat
+// Receives ManyChat webhook payloads for new subscribers and tag events.
+// Syncs Instagram funnel leads into the CRM.
+// ============================================================
+
+const IG_FUNNEL_ORDER = [
+  "NUEVO_SEGUIDOR",
+  "DM_ENVIADO",
+  "EN_CONVERSACION",
+  "CALIFICADO",
+  "AGENDA_ENVIADA",
+  "AGENDA_RESERVADA",
+] as const;
+
+type IgFunnelStage = (typeof IG_FUNNEL_ORDER)[number];
+
+function igStageIndex(stage: string | null | undefined): number {
+  if (!stage) return -1;
+  return IG_FUNNEL_ORDER.indexOf(stage as IgFunnelStage);
+}
+
+const TAG_TO_STAGE: Record<string, IgFunnelStage> = {
+  calificado: "CALIFICADO",
+  agenda_enviada: "AGENDA_ENVIADA",
+  agenda_reservada: "AGENDA_RESERVADA",
+};
+
+webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) => {
+  try {
+    const payload = req.body || {};
+    const payloadStr = JSON.stringify(payload).substring(0, 10000);
+    console.log(`[Webhook:ManyChat] Received:`, payloadStr.substring(0, 500));
+
+    // Log the raw event (non-fatal if table doesn't exist yet)
+    try {
+      await db.createManychatEvent({
+        eventType: payload.type || (payload.tag_name ? "tag_added" : "new_subscriber"),
+        subscriberId: payload.subscriber_id || payload.id || null,
+        rawPayload: payloadStr,
+      });
+    } catch (logErr: any) {
+      console.error("[Webhook:ManyChat] Failed to log event (non-fatal):", logErr.message);
+    }
+
+    // --- TAG ADDED ---
+    if (payload.tag_name) {
+      const tagName = String(payload.tag_name).toLowerCase().trim();
+      const newStage = TAG_TO_STAGE[tagName];
+
+      if (!newStage) {
+        console.log(`[Webhook:ManyChat] Unknown tag "${payload.tag_name}", ignoring.`);
+        return res.status(200).json({ success: true, action: "tag_ignored" });
+      }
+
+      const subscriberId = payload.subscriber_id || payload.id;
+      if (!subscriberId) {
+        console.error("[Webhook:ManyChat] tag_added event missing subscriber_id");
+        return res.status(200).json({ success: true, action: "no_subscriber_id" });
+      }
+
+      const lead = await db.findLeadByManychatId(String(subscriberId));
+      if (!lead) {
+        console.log(`[Webhook:ManyChat] No lead found for manychatSubscriberId=${subscriberId}`);
+        return res.status(200).json({ success: true, action: "lead_not_found" });
+      }
+
+      const currentIndex = igStageIndex(lead.igFunnelStage);
+      const newIndex = igStageIndex(newStage);
+
+      if (newIndex > currentIndex) {
+        await db.updateLead(lead.id, { igFunnelStage: newStage });
+        console.log(`[Webhook:ManyChat] Lead #${lead.id} igFunnelStage: ${lead.igFunnelStage || "null"} -> ${newStage}`);
+      } else {
+        console.log(`[Webhook:ManyChat] Lead #${lead.id} already at ${lead.igFunnelStage}, skipping ${newStage}`);
+      }
+
+      return res.status(200).json({ success: true, action: "tag_processed", leadId: lead.id, stage: newStage });
+    }
+
+    // --- NEW SUBSCRIBER ---
+    const subscriberId = payload.subscriber_id || payload.id;
+    if (!subscriberId) {
+      console.error("[Webhook:ManyChat] Payload missing subscriber_id");
+      return res.status(200).json({ success: true, action: "no_subscriber_id" });
+    }
+
+    // Fetch full profile from ManyChat API
+    const subscriber = await getSubscriberInfo(String(subscriberId));
+    const igHandle = subscriber?.ig_username || payload.ig_username || null;
+    const nombre = subscriber?.name || subscriber?.first_name || payload.name || null;
+    const email = subscriber?.email || payload.email || null;
+    const phone = subscriber?.phone || payload.phone || null;
+
+    // Try to find existing lead by instagram handle
+    let lead: any = null;
+    if (igHandle) {
+      lead = await db.findLeadByInstagram(igHandle);
+    }
+
+    if (lead) {
+      // Update existing lead with ManyChat subscriber ID
+      const updateData: Record<string, any> = {
+        manychatSubscriberId: String(subscriberId),
+      };
+
+      // Only advance igFunnelStage if not already further
+      const currentIndex = igStageIndex(lead.igFunnelStage);
+      const newIndex = igStageIndex("NUEVO_SEGUIDOR");
+      if (newIndex > currentIndex) {
+        updateData.igFunnelStage = "NUEVO_SEGUIDOR";
+      }
+
+      // Fill in missing fields
+      if (nombre && !lead.nombre) updateData.nombre = nombre;
+      if (email && !lead.correo) updateData.correo = email;
+      if (phone && !lead.telefono) updateData.telefono = phone;
+
+      await db.updateLead(lead.id, updateData);
+      console.log(`[Webhook:ManyChat] Updated existing lead #${lead.id} with manychatSubscriberId=${subscriberId}`);
+    } else {
+      // Create new lead (createLead returns the numeric id)
+      const newLeadId = await db.createLead({
+        nombre: nombre || igHandle || `MC-${subscriberId}`,
+        correo: email || null,
+        telefono: phone || null,
+        instagram: igHandle || null,
+        origen: "INSTAGRAM",
+        estadoLead: "NUEVO",
+        igFunnelStage: "NUEVO_SEGUIDOR",
+        categoria: "LEAD",
+        manychatSubscriberId: String(subscriberId),
+      } as any);
+
+      lead = { id: newLeadId };
+      console.log(`[Webhook:ManyChat] Created new lead #${newLeadId} from ManyChat subscriber ${subscriberId}`);
+    }
+
+    // Store CRM lead ID back in ManyChat custom field
+    if (lead?.id && ENV.manychatCrmFieldId) {
+      try {
+        await setCustomField(
+          String(subscriberId),
+          parseInt(ENV.manychatCrmFieldId, 10),
+          String(lead.id),
+        );
+        console.log(`[Webhook:ManyChat] Stored CRM lead #${lead.id} in ManyChat custom field`);
+      } catch (cfErr: any) {
+        console.error(`[Webhook:ManyChat] Failed to set custom field (non-fatal):`, cfErr.message);
+      }
+    }
+
+    return res.status(200).json({ success: true, action: "subscriber_processed", leadId: lead?.id });
+  } catch (err: any) {
+    console.error("[Webhook:ManyChat] Unhandled error:", err.message, err.stack);
+    return res.status(200).json({ success: true, error: "internal_error" });
   }
 });
 

@@ -52,12 +52,14 @@ export const appRouter = router({
         mes: z.string().optional(),
         semana: z.number().optional(),
         tipo: z.enum(["DEMO", "INTRO"]).optional(),
-        origen: z.enum(["ADS", "REFERIDO", "ORGANICO"]).optional(),
+        origen: z.enum(["ADS", "REFERIDO", "ORGANICO", "INSTAGRAM"]).optional(),
         nombre: z.string().optional(),
         correo: z.string().optional(),
         telefono: z.string().optional(),
         pais: z.string().optional(),
         instagram: z.string().optional(),
+        manychatSubscriberId: z.string().optional(),
+        igFunnelStage: z.string().optional(),
         rubro: z.string().optional(),
         setterAsignado: z.string().optional(),
         closer: z.string().optional(),
@@ -332,6 +334,11 @@ export const appRouter = router({
         revenueAtribuido: z.string().optional(),
         cashAtribuido: z.string().optional(),
         notas: z.string().optional(),
+        igConversacionesIniciadas: z.number().min(0).optional(),
+        igRespuestasRecibidas: z.number().min(0).optional(),
+        igCalificados: z.number().min(0).optional(),
+        igAgendasEnviadas: z.number().min(0).optional(),
+        igAgendasReservadas: z.number().min(0).optional(),
       }))
       .mutation(async ({ input }) => {
         const id = await db.createSetterActivity(input as any);
@@ -1302,6 +1309,19 @@ export const appRouter = router({
         await db.deleteRevenueScenario(input.id);
         return { success: true };
       }),
+  }),
+
+  // ==================== INSTAGRAM FUNNEL ====================
+  instagramFunnel: router({
+    kpis: crmProcedure
+      .input(z.object({ mes: z.string().optional(), semana: z.number().optional() }).optional())
+      .query(async ({ input }) => db.getInstagramFunnelKPIs(input ?? undefined)),
+    setterPerformance: crmProcedure
+      .input(z.object({ mes: z.string().optional(), semana: z.number().optional() }).optional())
+      .query(async ({ input }) => db.getSetterIgPerformance(input ?? undefined)),
+    events: crmProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .query(async ({ input }) => db.getManychatEvents(input?.limit ?? 50)),
   }),
 
   ai: router({

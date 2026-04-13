@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Clock } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 import { ScoreBadge, ContactoBadge } from "@/components/LeadBadges";
+import { calculateBusinessHours } from "@shared/businessHours";
 import {
   AGENDAS_STAGES,
   LEADS_STAGES,
@@ -146,7 +147,7 @@ export function PipelineBoard({ leads, vista, onEditLead, onStageDrop }: Pipelin
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="overflow-x-auto pb-4">
+      <div className="overflow-x-auto pb-4 scrollbar-hide">
         <div className="flex gap-3 min-w-max px-1">
           {columnData.map(col => (
             <PipelineColumn
@@ -202,7 +203,7 @@ function PipelineColumn({ stage, leads, count, total, vista, expanded, onToggleE
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className={`flex-1 overflow-y-auto max-h-[calc(100vh-300px)] p-2 space-y-1.5 transition-colors ${
+            className={`flex-1 overflow-y-auto max-h-[calc(100vh-300px)] p-2 space-y-1.5 transition-colors scrollbar-hide ${
               snapshot.isDraggingOver ? "bg-primary/5 ring-1 ring-inset ring-primary/20 rounded-b-lg" : ""
             }`}
           >
@@ -210,7 +211,7 @@ function PipelineColumn({ stage, leads, count, total, vista, expanded, onToggleE
               <p className="text-[10px] text-muted-foreground/50 text-center py-6">Sin leads</p>
             ) : (
               visibleLeads.map((lead, index) => (
-                <PipelineCard key={lead.id} lead={lead} vista={vista} onEdit={onEditLead} index={index} />
+                <PipelineCard key={lead.id} lead={lead} vista={vista} onEdit={onEditLead} index={index} stageKey={stage.key} />
               ))
             )}
             {provided.placeholder}
@@ -243,9 +244,10 @@ interface PipelineCardProps {
   vista: "AGENDAS" | "LEADS";
   onEdit: (lead: any) => void;
   index: number;
+  stageKey: string;
 }
 
-function PipelineCard({ lead, vista, onEdit, index }: PipelineCardProps) {
+function PipelineCard({ lead, vista, onEdit, index, stageKey }: PipelineCardProps) {
   const borderColor = SCORE_BORDER[lead.scoreLabel] || "border-l-border";
   const value = getLeadValue(lead);
 
@@ -282,7 +284,7 @@ function PipelineCard({ lead, vista, onEdit, index }: PipelineCardProps) {
             )}
           </div>
 
-          {/* Line 3: Setter + Date/Badge */}
+          {/* Line 3: Setter + Date/Badge/Timer */}
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             {lead.setterAsignado ? (
               <span className="truncate">{lead.setterAsignado}</span>
@@ -290,7 +292,9 @@ function PipelineCard({ lead, vista, onEdit, index }: PipelineCardProps) {
               <span className="text-muted-foreground/40">Sin setter</span>
             )}
             <span className="ml-auto shrink-0">
-              {vista === "AGENDAS" && lead.fecha ? (
+              {stageKey === "DEMO_CALL_REQUESTED" && lead.createdAt ? (
+                <ElapsedBadge createdAt={lead.createdAt} />
+              ) : vista === "AGENDAS" && lead.fecha ? (
                 <span>{format(new Date(lead.fecha), "dd/MM HH:mm", { locale: es })}</span>
               ) : (
                 <ContactoBadge resultado={lead.resultadoContacto} />
@@ -300,5 +304,39 @@ function PipelineCard({ lead, vista, onEdit, index }: PipelineCardProps) {
         </div>
       )}
     </Draggable>
+  );
+}
+
+// Elapsed time badge for uncontacted leads (DEMO_CALL_REQUESTED)
+function ElapsedBadge({ createdAt }: { createdAt: string }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const leadDate = new Date(createdAt);
+  const elapsed = calculateBusinessHours(leadDate, new Date(now));
+  if (elapsed <= 0) return <span className="text-muted-foreground/40">—</span>;
+
+  const minutes = elapsed * 60;
+  const colorClass = minutes <= 30
+    ? "text-green-400 bg-green-500/10 border-green-500/30"
+    : elapsed <= 3
+    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+    : "text-red-400 bg-red-500/10 border-red-500/30";
+
+  const label = minutes < 60
+    ? `${Math.round(minutes)}m`
+    : elapsed < 24
+    ? `${elapsed.toFixed(1)}h`
+    : `${Math.floor(elapsed / 24)}d`;
+
+  return (
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border animate-pulse ${colorClass}`}>
+      <Clock className="h-2.5 w-2.5" />
+      {label}
+    </span>
   );
 }

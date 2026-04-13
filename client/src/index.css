@@ -228,6 +228,10 @@
   }
 }
 
+/* Hidden scrollbars */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+
 /* Sacamedi custom utilities */
 .gradient-purple {
   background: linear-gradient(135deg, #1E1245 0%, #2D1B69 50%, #A855F7 100%);

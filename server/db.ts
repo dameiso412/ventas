@@ -26,6 +26,7 @@ import {
   allowedEmails, InsertAllowedEmail, AllowedEmail,
   revenueScenarios, InsertRevenueScenario,
   leadDataEntries, InsertLeadDataEntry,
+  manychatEvents, InsertManychatEvent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { calculateBusinessHours } from '../shared/businessHours';
@@ -579,6 +580,7 @@ export async function getDashboardKPIs(filters?: { mes?: string; semana?: number
     leadsAds: sql<number>`SUM(CASE WHEN ${leads.origen} = 'ADS' THEN 1 ELSE 0 END)`,
     leadsReferido: sql<number>`SUM(CASE WHEN ${leads.origen} = 'REFERIDO' THEN 1 ELSE 0 END)`,
     leadsOrganico: sql<number>`SUM(CASE WHEN ${leads.origen} = 'ORGANICO' THEN 1 ELSE 0 END)`,
+    leadsInstagram: sql<number>`SUM(CASE WHEN ${leads.origen} = 'INSTAGRAM' THEN 1 ELSE 0 END)`,
     // Product type aggregation
     ventasPIF: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' AND ${leads.productoTipo} = 'PIF' THEN 1 ELSE 0 END)`,
     ventasSetupMonthly: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' AND ${leads.productoTipo} = 'SETUP_MONTHLY' THEN 1 ELSE 0 END)`,
@@ -3227,4 +3229,105 @@ export async function getHourlySummaryStats() {
     contacted: Number(contactedRow?.count ?? 0),
     confirmed: Number(confirmedRow?.count ?? 0),
   };
+}
+
+// ==================== INSTAGRAM FUNNEL ====================
+
+export async function findLeadByInstagram(handle: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db
+    .select()
+    .from(leads)
+    .where(sql`LOWER(${leads.instagram}) = LOWER(${handle})`)
+    .limit(1);
+  return results[0] ?? null;
+}
+
+export async function findLeadByManychatId(subscriberId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.manychatSubscriberId, subscriberId))
+    .limit(1);
+  return results[0] ?? null;
+}
+
+export async function createManychatEvent(data: {
+  subscriberId: string;
+  eventType: string;
+  eventData?: any;
+  rawPayload?: string;
+  tagName?: string;
+  leadId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { rawPayload, ...rest } = data;
+  const values = {
+    ...rest,
+    eventData: rest.eventData ?? (rawPayload ? rawPayload : undefined),
+  };
+  const [result] = await db
+    .insert(manychatEvents)
+    .values(values)
+    .returning({ id: manychatEvents.id });
+  return result.id;
+}
+
+export async function getManychatEvents(limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(manychatEvents)
+    .orderBy(desc(manychatEvents.createdAt))
+    .limit(limit);
+}
+
+export async function getInstagramFunnelKPIs(filters?: { mes?: string; semana?: number }) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const conditions = [eq(leads.origen, "INSTAGRAM")];
+  if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
+  const where = and(...conditions);
+
+  const result = await db.select({
+    totalIgLeads: sql<number>`COUNT(*)`,
+    nuevosSeguidores: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'NUEVO_SEGUIDOR' THEN 1 ELSE 0 END)`,
+    dmsEnviados: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'DM_ENVIADO' THEN 1 ELSE 0 END)`,
+    enConversacion: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'EN_CONVERSACION' THEN 1 ELSE 0 END)`,
+    calificados: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'CALIFICADO' THEN 1 ELSE 0 END)`,
+    agendasEnviadas: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'AGENDA_ENVIADA' THEN 1 ELSE 0 END)`,
+    agendasReservadas: sql<number>`SUM(CASE WHEN ${leads.igFunnelStage} = 'AGENDA_RESERVADA' THEN 1 ELSE 0 END)`,
+    demosAsistidas: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'ASISTIÓ' THEN 1 ELSE 0 END)`,
+    ventas: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN 1 ELSE 0 END)`,
+    cashFromIg: sql<number>`COALESCE(SUM(CAST(${leads.cashCollected} AS DECIMAL(10,2))), 0)`,
+    revenueFromIg: sql<number>`COALESCE(SUM(CAST(${leads.contractedRevenue} AS DECIMAL(10,2))), 0)`,
+  }).from(leads).where(where);
+
+  return result[0];
+}
+
+export async function getSetterIgPerformance(filters?: { mes?: string; semana?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions: any[] = [];
+  if (filters?.mes) conditions.push(eq(setterActivities.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(setterActivities.semana, filters.semana));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  return db.select({
+    setter: setterActivities.setter,
+    igConversacionesIniciadas: sql<number>`COALESCE(SUM(${setterActivities.igConversacionesIniciadas}), 0)`,
+    igRespuestasRecibidas: sql<number>`COALESCE(SUM(${setterActivities.igRespuestasRecibidas}), 0)`,
+    igCalificados: sql<number>`COALESCE(SUM(${setterActivities.igCalificados}), 0)`,
+    igAgendasEnviadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasEnviadas}), 0)`,
+    igAgendasReservadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0)`,
+  }).from(setterActivities).where(where).groupBy(setterActivities.setter).orderBy(sql`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0) DESC`);
 }

@@ -10,4 +10,6 @@ export const ENV = {
   metaAdAccountId: process.env.META_AD_ACCOUNT_ID ?? "act_1347234229107497",
   slackWebhookUrl: process.env.SLACK_WEBHOOK_URL ?? "",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
+  manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",
 };

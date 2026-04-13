@@ -25,6 +25,7 @@ import {
   BarChart3,
   Zap,
   Target,
+  MessageCircle,
 } from "lucide-react";
 
 // ==================== HELPERS ====================
@@ -117,6 +118,14 @@ export default function Atribucion() {
   // Sync status
   const lastSyncQuery = trpc.metaAds.lastSync.useQuery(undefined, {
     staleTime: 60 * 1000, // refresh every minute
+  });
+
+  // Instagram funnel queries
+  const igFunnelKpis = trpc.instagramFunnel.kpis.useQuery({
+    mes: selectedMonth !== months[currentDate.getMonth()] ? selectedMonth : undefined,
+  });
+  const igSetterPerf = trpc.instagramFunnel.setterPerformance.useQuery({
+    mes: selectedMonth !== months[currentDate.getMonth()] ? selectedMonth : undefined,
   });
 
   // Drill-down queries
@@ -597,6 +606,83 @@ export default function Atribucion() {
           </p>
         </CardContent>
       </Card>
+
+      {/* ==================== INSTAGRAM ORGÁNICO ==================== */}
+      <Card className="bg-card/50 border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-pink-400" />
+            Instagram Orgánico — Funnel
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Seguidores → DMs → Calificados → Agendas → Demos → Ventas</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {igFunnelKpis.isLoading ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Cargando funnel IG...</span>
+            </div>
+          ) : igFunnelKpis.data ? (
+            <>
+              {/* Funnel bars */}
+              <InstagramFunnelBars data={igFunnelKpis.data} />
+
+              {/* Revenue attribution */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                <KpiCard icon={<Users className="h-4 w-4" />} label="Total Leads IG" value={formatNumber(igFunnelKpis.data.totalIgLeads)} color="text-pink-400" />
+                <KpiCard icon={<DollarSign className="h-4 w-4" />} label="Cash IG" value={`$${Number(igFunnelKpis.data.cashFromIg || 0).toLocaleString()}`} color="text-green-400" />
+                <KpiCard icon={<TrendingUp className="h-4 w-4" />} label="Revenue IG" value={`$${Number(igFunnelKpis.data.revenueFromIg || 0).toLocaleString()}`} color="text-emerald-400" />
+                <KpiCard icon={<Target className="h-4 w-4" />} label="Ventas IG" value={formatNumber(igFunnelKpis.data.ventas)} color="text-amber-400" />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">Sin datos de funnel Instagram para este período</p>
+          )}
+
+          {/* Setter IG Performance Table */}
+          {igSetterPerf.data && igSetterPerf.data.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Performance de Setters en IG
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border/50 bg-muted/30">
+                      <th className="text-left p-2 font-medium text-muted-foreground">Setter</th>
+                      <th className="text-center p-2 font-medium text-pink-400">Conv.</th>
+                      <th className="text-center p-2 font-medium text-pink-400">Resp.</th>
+                      <th className="text-center p-2 font-medium text-pink-400">% Resp</th>
+                      <th className="text-center p-2 font-medium text-pink-400">Calif.</th>
+                      <th className="text-center p-2 font-medium text-pink-400">Ag.Env</th>
+                      <th className="text-center p-2 font-medium text-pink-400">Ag.Res</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {igSetterPerf.data.map((s: any) => {
+                      const conv = Number(s.igConversacionesIniciadas || 0);
+                      const resp = Number(s.igRespuestasRecibidas || 0);
+                      const respRate = conv > 0 ? ((resp / conv) * 100).toFixed(0) : "-";
+                      return (
+                        <tr key={s.setter} className="border-b border-border/30 hover:bg-muted/20">
+                          <td className="p-2 font-medium">{s.setter}</td>
+                          <td className="p-2 text-center">{conv}</td>
+                          <td className="p-2 text-center">{resp}</td>
+                          <td className="p-2 text-center font-medium text-pink-400">{respRate !== "-" ? `${respRate}%` : "-"}</td>
+                          <td className="p-2 text-center">{Number(s.igCalificados || 0)}</td>
+                          <td className="p-2 text-center">{Number(s.igAgendasEnviadas || 0)}</td>
+                          <td className="p-2 text-center">{Number(s.igAgendasReservadas || 0)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -621,6 +707,42 @@ function KpiCard({ icon, label, value, sub, color }: {
         {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function InstagramFunnelBars({ data }: { data: any }) {
+  const stages = [
+    { label: "Nuevos Seguidores", value: Number(data.nuevosSeguidores || 0), color: "bg-pink-500" },
+    { label: "DMs Enviados", value: Number(data.dmsEnviados || 0), color: "bg-pink-400" },
+    { label: "En Conversación", value: Number(data.enConversacion || 0), color: "bg-fuchsia-400" },
+    { label: "Calificados", value: Number(data.calificados || 0), color: "bg-purple-400" },
+    { label: "Agendas Enviadas", value: Number(data.agendasEnviadas || 0), color: "bg-violet-400" },
+    { label: "Agendas Reservadas", value: Number(data.agendasReservadas || 0), color: "bg-blue-400" },
+    { label: "Ventas", value: Number(data.ventas || 0), color: "bg-green-400" },
+  ];
+  const max = Math.max(...stages.map(s => s.value), 1);
+  return (
+    <div className="space-y-2">
+      {stages.map((stage, i) => {
+        const pct = (stage.value / max) * 100;
+        const prevValue = i > 0 ? stages[i - 1].value : 0;
+        const convRate = prevValue > 0 ? ((stage.value / prevValue) * 100).toFixed(0) : null;
+        return (
+          <div key={stage.label} className="flex items-center gap-3">
+            <div className="w-[140px] text-xs text-muted-foreground text-right shrink-0">{stage.label}</div>
+            <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden relative">
+              <div className={`h-full ${stage.color} rounded transition-all duration-500`} style={{ width: `${Math.max(pct, 2)}%` }} />
+              <span className="absolute inset-0 flex items-center px-2 text-xs font-medium text-foreground">
+                {stage.value}
+              </span>
+            </div>
+            {convRate && (
+              <span className="text-[10px] text-muted-foreground w-[40px] shrink-0">{convRate}%</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

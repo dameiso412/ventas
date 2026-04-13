@@ -5,7 +5,8 @@ import { integer, bigint, text, timestamp, varchar, decimal, json, jsonb, unique
 export const roleEnum = pgEnum("role", ["user", "admin", "setter", "closer"]);
 export const tipoEnum = pgEnum("tipo", ["DEMO", "INTRO"]);
 export const categoriaEnum = pgEnum("categoria", ["AGENDA", "LEAD"]);
-export const origenEnum = pgEnum("origen", ["ADS", "REFERIDO", "ORGANICO"]);
+export const origenEnum = pgEnum("origen", ["ADS", "REFERIDO", "ORGANICO", "INSTAGRAM"]);
+export const igFunnelStageEnum = pgEnum("ig_funnel_stage", ["NUEVO_SEGUIDOR", "DM_ENVIADO", "EN_CONVERSACION", "CALIFICADO", "AGENDA_ENVIADA", "AGENDA_RESERVADA", "DESCARTADO"]);
 export const estadoLeadEnum = pgEnum("estado_lead", ["NUEVO", "CONTACTADO", "CALIFICADO", "DESCARTADO", "CONVERTIDO_AGENDA"]);
 export const resultadoContactoEnum = pgEnum("resultado_contacto", ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "WHATSAPP LIMPIADO", "PENDIENTE"]);
 export const siNoEnum = pgEnum("si_no", ["SÍ", "NO"]);
@@ -71,6 +72,9 @@ export const leads = pgTable("leads", {
   pais: varchar("pais", { length: 50 }),
   instagram: varchar("instagram", { length: 255 }),
   rubro: varchar("rubro", { length: 255 }),
+  // ManyChat / Instagram funnel
+  manychatSubscriberId: varchar("manychatSubscriberId", { length: 100 }),
+  igFunnelStage: igFunnelStageEnum("igFunnelStage"),
   // Estado del lead (para leads sin agendar)
   estadoLead: estadoLeadEnum("estadoLead").default("NUEVO"),
   // Proceso de contacto
@@ -184,6 +188,12 @@ export const setterActivities = pgTable("setter_activities", {
   cierresAtribuidos: integer("cierresAtribuidos").default(0),
   revenueAtribuido: decimal("revenueAtribuido", { precision: 10, scale: 2 }).default("0"),
   cashAtribuido: decimal("cashAtribuido", { precision: 10, scale: 2 }).default("0"),
+  // Instagram DM metrics
+  igConversacionesIniciadas: integer("igConversacionesIniciadas").default(0),
+  igRespuestasRecibidas: integer("igRespuestasRecibidas").default(0),
+  igCalificados: integer("igCalificados").default(0),
+  igAgendasEnviadas: integer("igAgendasEnviadas").default(0),
+  igAgendasReservadas: integer("igAgendasReservadas").default(0),
   // Notas
   notas: text("notas"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -769,3 +779,20 @@ export const leadDataEntries = pgTable("lead_data_entries", {
 
 export type LeadDataEntry = typeof leadDataEntries.$inferSelect;
 export type InsertLeadDataEntry = typeof leadDataEntries.$inferInsert;
+
+/**
+ * ManyChat Events - Webhook event log for Instagram funnel tracking
+ */
+export const manychatEvents = pgTable("manychat_events", {
+  id: serial("id").primaryKey(),
+  subscriberId: varchar("subscriberId", { length: 100 }).notNull(),
+  eventType: varchar("eventType", { length: 50 }).notNull(),
+  eventData: jsonb("eventData"),
+  tagName: varchar("tagName", { length: 100 }),
+  leadId: integer("leadId"),
+  processedAt: timestamp("processedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ManychatEvent = typeof manychatEvents.$inferSelect;
+export type InsertManychatEvent = typeof manychatEvents.$inferInsert;
