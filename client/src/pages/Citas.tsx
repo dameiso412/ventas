@@ -22,8 +22,6 @@ import { toast } from "sonner";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
 import { ProspectProfile } from "@/components/ProspectProfile";
 import { PipelineBoard } from "@/components/PipelineBoard";
-import { RecordingUpload } from "@/components/RecordingUpload";
-import { CallAuditInline } from "@/components/CallAuditInline";
 import { ScoreBadge, OutcomeBadge, ContactoBadge, EstadoLeadBadge } from "@/components/LeadBadges";
 import { calculateBusinessHours } from "@shared/businessHours";
 
@@ -1209,15 +1207,8 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
             </div>
           )}
           <div className="col-span-2">
-            <RecordingUpload
-              leadId={lead.id}
-              closer={form.closer}
-              value={form.linkGrabacion}
-              onChange={(url) => setForm(p => ({ ...p, linkGrabacion: url }))}
-            />
-          </div>
-          <div className="col-span-2">
-            <CallAuditInline leadId={lead.id} />
+            <Label className="text-xs text-muted-foreground">Link Grabación</Label>
+            <Input value={form.linkGrabacion} onChange={e => setForm(p => ({ ...p, linkGrabacion: e.target.value }))} className="bg-background/50" placeholder="URL de la grabación" />
           </div>
         </div>
       </PipelineSection>

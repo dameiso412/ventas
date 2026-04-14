@@ -55,14 +55,12 @@ uploadRouter.post(
         return;
       }
 
-      // Validate leadId
-      const leadId = parseInt(req.body.leadId);
-      if (!leadId || isNaN(leadId)) {
-        res.status(400).json({ error: "leadId es requerido" });
-        return;
-      }
+      // leadId is optional — audits can exist without a linked lead
+      const rawLeadId = req.body.leadId ? parseInt(req.body.leadId) : null;
+      const leadId = rawLeadId && !isNaN(rawLeadId) ? rawLeadId : null;
 
       const closer = req.body.closer || null;
+      const leadName = req.body.leadName || null;
       const fechaLlamada = req.body.fechaLlamada
         ? new Date(req.body.fechaLlamada)
         : new Date();
@@ -78,8 +76,8 @@ uploadRouter.post(
         leadId,
       );
 
-      // Get lead info for the audit record
-      const lead = await getLeadById(leadId);
+      // Get lead info if linked
+      const lead = leadId ? await getLeadById(leadId) : null;
 
       // Create callAudit record
       const audit = await createCallAudit({
@@ -87,7 +85,7 @@ uploadRouter.post(
         closer,
         fechaLlamada,
         linkGrabacion: publicUrl,
-        leadName: lead?.nombre || null,
+        leadName: lead?.nombre || leadName || null,
         leadEmail: lead?.correo || null,
       });
 

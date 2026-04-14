@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useRoute, useLocation } from "wouter";
 import {
   Headphones, Star, Clock, CheckCircle2, AlertTriangle,
   ChevronLeft, ExternalLink, User, Phone, MessageSquare,
   ThumbsDown, Lightbulb, ListChecks, Plus, X, Save,
-  Filter, Search, FileText, Mail
+  Filter, Search, FileText, Mail, Upload, Loader2, AlertCircle, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
 
@@ -63,6 +65,208 @@ function ReviewBadge({ status }: { status: string }) {
   return <Badge className={styles[status] || "bg-muted text-muted-foreground"}>{status}</Badge>;
 }
 
+// ==================== UPLOAD DIALOG ====================
+const ACCEPTED = ".mp3,.mp4,.wav,.m4a,.webm";
+const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+type UploadState = "idle" | "uploading" | "processing" | "done" | "error";
+
+function UploadRecordingDialog({ onUploaded }: { onUploaded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<UploadState>("idle");
+  const [fileName, setFileName] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [auditId, setAuditId] = useState<number | null>(null);
+  const [closer, setCloser] = useState("");
+  const [leadName, setLeadName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Poll for analysis completion
+  const { data: polledAudit } = trpc.callAudits.getById.useQuery(
+    { id: auditId! },
+    { enabled: state === "processing" && auditId !== null, refetchInterval: 5000 },
+  );
+
+  if (state === "processing" && polledAudit?.aiFeedback && !polledAudit.aiFeedback.startsWith("Error:")) {
+    setState("done");
+    toast.success("Análisis de llamada completado");
+    onUploaded();
+  } else if (state === "processing" && polledAudit?.aiFeedback?.startsWith("Error:")) {
+    setState("error");
+    setErrorMsg(polledAudit.aiFeedback);
+  }
+
+  const resetForm = () => {
+    setState("idle");
+    setFileName("");
+    setErrorMsg("");
+    setAuditId(null);
+    setCloser("");
+    setLeadName("");
+  };
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    if (file.size > MAX_SIZE) {
+      setErrorMsg("Archivo muy grande. Máximo 25MB.");
+      setState("error");
+      return;
+    }
+
+    if (!closer) {
+      setErrorMsg("Selecciona un closer antes de subir el archivo.");
+      setState("error");
+      return;
+    }
+
+    setFileName(file.name);
+    setState("uploading");
+    setErrorMsg("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("closer", closer);
+      if (leadName.trim()) formData.append("leadName", leadName.trim());
+
+      const resp = await fetch("/api/upload/recording", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || `Error ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      setAuditId(data.auditId);
+      setState("processing");
+      toast.info("Grabación subida. Transcribiendo y analizando...");
+    } catch (err: any) {
+      setState("error");
+      setErrorMsg(err.message || "Error subiendo archivo");
+      toast.error(err.message || "Error subiendo archivo");
+    }
+  }, [closer, leadName]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v && state !== "processing") resetForm(); }}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="gap-2">
+          <Upload className="h-4 w-4" />
+          Subir Grabación
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            Subir Grabación de Llamada
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-2">
+          {/* Closer selector */}
+          <div>
+            <Label className="text-sm">Closer *</Label>
+            <TeamMemberSelect
+              value={closer || "all"}
+              onValueChange={(v) => setCloser(v === "all" ? "" : v)}
+              role="CLOSER"
+              includeAll
+              allLabel="Seleccionar closer..."
+              className="w-full mt-1"
+            />
+          </div>
+
+          {/* Lead name (optional) */}
+          <div>
+            <Label className="text-sm">Nombre del Prospecto (opcional)</Label>
+            <Input
+              value={leadName}
+              onChange={(e) => setLeadName(e.target.value)}
+              placeholder="Ej: María García"
+              className="mt-1"
+            />
+          </div>
+
+          {/* File upload */}
+          <div>
+            <Label className="text-sm">Archivo de Audio/Video *</Label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPTED}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileSelect(file);
+                e.target.value = "";
+              }}
+            />
+
+            {state === "idle" || state === "error" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full mt-1 h-20 border-dashed flex flex-col gap-1"
+                onClick={() => {
+                  if (!closer) {
+                    setErrorMsg("Selecciona un closer primero.");
+                    setState("error");
+                    return;
+                  }
+                  fileRef.current?.click();
+                }}
+              >
+                <Upload className="h-5 w-5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">
+                  Haz click para seleccionar archivo
+                </span>
+                <span className="text-[10px] text-muted-foreground/60">
+                  mp3, mp4, wav, m4a, webm — máx. 25MB
+                </span>
+              </Button>
+            ) : state === "done" ? (
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30 mt-1">
+                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{fileName}</p>
+                  <p className="text-xs text-emerald-400">Análisis completado</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { resetForm(); }}
+                >
+                  Subir otra
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 border border-border/50 mt-1">
+                <Loader2 className={`h-5 w-5 animate-spin shrink-0 ${state === "uploading" ? "text-primary" : "text-amber-400"}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{fileName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {state === "uploading" ? "Subiendo archivo..." : "Transcribiendo y analizando con IA..."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {state === "error" && errorMsg && (
+              <div className="flex items-center gap-2 mt-2 text-xs text-red-400">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ==================== AUDIT LIST VIEW ====================
 function AuditListView() {
   const [, setLocation] = useLocation();
@@ -70,12 +274,17 @@ function AuditListView() {
   const [filterReview, setFilterReview] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const { data: stats } = trpc.callAudits.stats.useQuery();
-  const { data: audits, isLoading } = trpc.callAudits.list.useQuery({
+  const { data: stats, refetch: refetchStats } = trpc.callAudits.stats.useQuery();
+  const { data: audits, isLoading, refetch: refetchAudits } = trpc.callAudits.list.useQuery({
     closer: filterCloser || undefined,
     manualReview: filterReview || undefined,
     limit: 100,
   });
+
+  const handleUploaded = () => {
+    refetchAudits();
+    refetchStats();
+  };
 
   const filteredAudits = audits?.filter(a => {
     if (!searchTerm) return true;
@@ -91,14 +300,17 @@ function AuditListView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Headphones className="h-6 w-6 text-primary" />
-          Auditoría de Llamadas
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Análisis automatizado y revisión manual de llamadas de venta
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Headphones className="h-6 w-6 text-primary" />
+            Auditoría de Llamadas
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Análisis automatizado y revisión manual de llamadas de venta
+          </p>
+        </div>
+        <UploadRecordingDialog onUploaded={handleUploaded} />
       </div>
 
       {/* Stats */}
@@ -251,6 +463,13 @@ function AuditDetailView({ id }: { id: number }) {
     },
     onError: (err) => toast.error(err.message),
   });
+  const reanalyzeMut = trpc.callAudits.reanalyze.useMutation({
+    onSuccess: () => {
+      toast.success("Reanalizando... los resultados aparecerán en unos segundos");
+      setTimeout(() => refetch(), 5000);
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const [manualNotes, setManualNotes] = useState("");
   const [actionItems, setActionItems] = useState<{ text: string; done: boolean }[]>([]);
@@ -313,7 +532,20 @@ function AuditDetailView({ id }: { id: number }) {
             {audit.closer || "Sin closer"} — {audit.fechaLlamada ? new Date(audit.fechaLlamada).toLocaleDateString("es-CL", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : "Sin fecha"}
           </p>
         </div>
-        <GradingBadge grade={audit.aiGrading} />
+        <div className="flex items-center gap-2">
+          {audit.recordingTranscript && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => reanalyzeMut.mutate({ id: audit.id })}
+              disabled={reanalyzeMut.isPending}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${reanalyzeMut.isPending ? "animate-spin" : ""}`} />
+              Reanalizar
+            </Button>
+          )}
+          <GradingBadge grade={audit.aiGrading} />
+        </div>
       </div>
 
       {/* Info cards row */}

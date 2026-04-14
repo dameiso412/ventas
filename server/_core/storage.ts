@@ -41,11 +41,12 @@ export async function uploadRecording(
   buffer: Buffer,
   filename: string,
   mimeType: string,
-  leadId: number,
+  leadId?: number | null,
 ): Promise<string> {
   const supabase = getSupabaseAdmin();
   const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${leadId}/${Date.now()}-${sanitized}`;
+  const folder = leadId ? String(leadId) : "general";
+  const path = `${folder}/${Date.now()}-${sanitized}`;
 
   const { error } = await supabase.storage
     .from(BUCKET)
