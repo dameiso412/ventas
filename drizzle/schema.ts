@@ -1,4 +1,4 @@
-import { integer, bigint, text, timestamp, varchar, decimal, json, jsonb, uniqueIndex, pgTable, pgEnum, serial } from "drizzle-orm/pg-core";
+import { integer, bigint, text, timestamp, varchar, decimal, json, jsonb, uniqueIndex, index, pgTable, pgEnum, serial } from "drizzle-orm/pg-core";
 
 // ==================== Enums ====================
 
@@ -127,7 +127,17 @@ export const leads = pgTable("leads", {
   // Timestamps
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  mesSemanaIdx: index("idx_leads_mes_semana").on(table.mes, table.semana),
+  setterIdx: index("idx_leads_setter").on(table.setterAsignado),
+  closerIdx: index("idx_leads_closer").on(table.closer),
+  outcomeIdx: index("idx_leads_outcome").on(table.outcome),
+  asistenciaIdx: index("idx_leads_asistencia").on(table.asistencia),
+  scoreLabelIdx: index("idx_leads_score_label").on(table.scoreLabel),
+  categoriaIdx: index("idx_leads_categoria").on(table.categoria),
+  createdAtIdx: index("idx_leads_created_at").on(table.createdAt),
+  fechaIdx: index("idx_leads_fecha").on(table.fecha),
+}));
 
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = typeof leads.$inferInsert;
@@ -552,7 +562,9 @@ export const notifications = pgTable("notifications", {
   fromUserName: varchar("fromUserName", { length: 100 }),
   isRead: integer("isRead").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  userUnreadIdx: index("idx_notifications_user_unread").on(table.userId, table.isRead),
+}));
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;

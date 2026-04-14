@@ -1,38 +1,40 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
-import Home from "./pages/Home";
-import Citas from "./pages/Citas";
-import SetterTracker from "./pages/SetterTracker";
-import CloserTracker from "./pages/CloserTracker";
-import Scoring from "./pages/Scoring";
-import Leaderboards from "./pages/Leaderboards";
-import WebhookInfo from "./pages/WebhookInfo";
-import Diagnostico from "./pages/Diagnostico";
-import ApiDocs from "./pages/ApiDocs";
-import Proyecciones from "./pages/Proyecciones";
-import TeamSummary from "./pages/TeamSummary";
-import RepProfile from "./pages/RepProfile";
-import Alertas from "./pages/Alertas";
-import AuditoriaLlamadas from "./pages/AuditoriaLlamadas";
-import FollowUps from "./pages/FollowUps";
-import Atribucion from "./pages/Atribucion";
-import ColaTrabajo from "./pages/ColaTrabajo";
-import Confirmaciones from "./pages/Confirmaciones";
-import Equipo from "./pages/Equipo";
-import Accesos from "./pages/Accesos";
-import Calculadora from "./pages/Calculadora";
 import AccesoDenegado from "./pages/AccesoDenegado";
-import NoPermiso from "./pages/NoPermiso";
 import Login from "./pages/Login";
 import { useAuth } from "./_core/hooks/useAuth";
 import { hasAccess } from "@shared/permissions";
 import { DashboardLayoutSkeleton } from "./components/DashboardLayoutSkeleton";
-import { useEffect, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
+
+// Lazy-loaded pages — only downloaded when navigated to
+const Home = lazy(() => import("./pages/Home"));
+const Citas = lazy(() => import("./pages/Citas"));
+const SetterTracker = lazy(() => import("./pages/SetterTracker"));
+const CloserTracker = lazy(() => import("./pages/CloserTracker"));
+const Scoring = lazy(() => import("./pages/Scoring"));
+const Leaderboards = lazy(() => import("./pages/Leaderboards"));
+const WebhookInfo = lazy(() => import("./pages/WebhookInfo"));
+const Diagnostico = lazy(() => import("./pages/Diagnostico"));
+const ApiDocs = lazy(() => import("./pages/ApiDocs"));
+const Proyecciones = lazy(() => import("./pages/Proyecciones"));
+const TeamSummary = lazy(() => import("./pages/TeamSummary"));
+const RepProfile = lazy(() => import("./pages/RepProfile"));
+const Alertas = lazy(() => import("./pages/Alertas"));
+const AuditoriaLlamadas = lazy(() => import("./pages/AuditoriaLlamadas"));
+const FollowUps = lazy(() => import("./pages/FollowUps"));
+const Atribucion = lazy(() => import("./pages/Atribucion"));
+const ColaTrabajo = lazy(() => import("./pages/ColaTrabajo"));
+const Confirmaciones = lazy(() => import("./pages/Confirmaciones"));
+const Equipo = lazy(() => import("./pages/Equipo"));
+const Accesos = lazy(() => import("./pages/Accesos"));
+const Calculadora = lazy(() => import("./pages/Calculadora"));
+const NoPermiso = lazy(() => import("./pages/NoPermiso"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 /**
  * ProtectedRoute - wraps a page component with role-based access check.
@@ -77,6 +79,7 @@ function CRMRouter() {
 
   return (
     <DashboardLayout>
+      <Suspense fallback={<DashboardLayoutSkeleton />}>
       <Switch>
         <Route path={"/"}>
           <ProtectedRoute component={Home} path="/" />
@@ -150,6 +153,7 @@ function CRMRouter() {
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>
+      </Suspense>
     </DashboardLayout>
   );
 }

@@ -40,8 +40,9 @@ export async function getDb() {
       _sql = postgres(process.env.DATABASE_URL, {
         prepare: false,
         connect_timeout: 10,
-        idle_timeout: 20,
+        idle_timeout: 120,
         max_lifetime: 60 * 30,
+        max: 10,
       });
       _db = drizzle(_sql);
       // Test the connection immediately
@@ -654,13 +655,13 @@ export async function getDistinctValues() {
   const db = await getDb();
   if (!db) return { meses: [], setters: [], closers: [] };
 
-  const meses = await db.selectDistinct({ mes: leads.mes }).from(leads).where(sql`${leads.mes} IS NOT NULL`);
-  const setters = await db.selectDistinct({ setter: leads.setterAsignado }).from(leads).where(sql`${leads.setterAsignado} IS NOT NULL`);
-  const closers = await db.selectDistinct({ closer: leads.closer }).from(leads).where(sql`${leads.closer} IS NOT NULL`);
-
-  // Also get from activities
-  const setterAct = await db.selectDistinct({ setter: setterActivities.setter }).from(setterActivities);
-  const closerAct = await db.selectDistinct({ closer: closerActivities.closer }).from(closerActivities);
+  const [meses, setters, closers, setterAct, closerAct] = await Promise.all([
+    db.selectDistinct({ mes: leads.mes }).from(leads).where(sql`${leads.mes} IS NOT NULL`),
+    db.selectDistinct({ setter: leads.setterAsignado }).from(leads).where(sql`${leads.setterAsignado} IS NOT NULL`),
+    db.selectDistinct({ closer: leads.closer }).from(leads).where(sql`${leads.closer} IS NOT NULL`),
+    db.selectDistinct({ setter: setterActivities.setter }).from(setterActivities),
+    db.selectDistinct({ closer: closerActivities.closer }).from(closerActivities),
+  ]);
 
   const allSetters = Array.from(new Set([...setters.map(s => s.setter), ...setterAct.map(s => s.setter)].filter(Boolean)));
   const allClosers = Array.from(new Set([...closers.map(c => c.closer), ...closerAct.map(c => c.closer)].filter(Boolean)));

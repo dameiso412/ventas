@@ -507,8 +507,10 @@ export const appRouter = router({
         semana: z.number().optional(),
       }).optional())
       .query(async ({ input }) => {
-        const mkpi = await db.getMarketingKPIs(input ?? undefined);
-        const dkpi = await db.getDashboardKPIs(input ?? undefined);
+        const [mkpi, dkpi] = await Promise.all([
+          db.getMarketingKPIs(input ?? undefined),
+          db.getDashboardKPIs(input ?? undefined),
+        ]);
         if (!mkpi || !dkpi) return { metrics: [], constraints: [], summary: null };
 
         const adSpend = mkpi.adSpend || 0;

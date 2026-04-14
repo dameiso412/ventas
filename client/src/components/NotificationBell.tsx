@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 
 const NOTIFICATION_SOUND_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663172432285/FJutJ9PtonH8caxBfk3FHF/notification-chime_97dc0409.wav";
-const POLL_INTERVAL = 15_000; // 15 seconds
+const POLL_INTERVAL = 60_000; // 60 seconds
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);

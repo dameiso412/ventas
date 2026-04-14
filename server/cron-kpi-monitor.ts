@@ -10,7 +10,7 @@ import * as db from "./db";
 import { sendSlackMessage, sendSlackAlert, isSlackConfigured } from "./_core/slack";
 
 // ─── Intervals ───────────────────────────────────────────────
-const PULSE_INTERVAL_MS = 10 * 60 * 1000;   // 10 min
+const PULSE_INTERVAL_MS = 15 * 60 * 1000;   // 15 min
 const HOURLY_INTERVAL_MS = 60 * 60 * 1000;  // 60 min
 
 let pulseTimer: ReturnType<typeof setInterval> | null = null;
