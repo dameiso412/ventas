@@ -36,21 +36,26 @@ let _sql: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
-    try {
-      _sql = postgres(process.env.DATABASE_URL, {
-        prepare: false,
-        connect_timeout: 10,
-        idle_timeout: 20,
-        max_lifetime: 60 * 30,
-      });
-      _db = drizzle(_sql);
-      // Test the connection immediately
-      await _sql`SELECT 1`;
-      console.log("[Database] Connected successfully");
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-      _sql = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        _sql = postgres(process.env.DATABASE_URL, {
+          prepare: false,
+          connect_timeout: 10,
+          idle_timeout: 20,
+          max_lifetime: 60 * 30,
+        });
+        _db = drizzle(_sql);
+        // Test the connection immediately
+        await _sql`SELECT 1`;
+        console.log("[Database] Connected successfully");
+        break;
+      } catch (error) {
+        console.warn(`[Database] Connection attempt ${attempt}/3 failed:`, error);
+        try { if (_sql) await _sql.end(); } catch {}
+        _db = null;
+        _sql = null;
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
     }
   }
   return _db;
