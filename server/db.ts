@@ -40,9 +40,8 @@ export async function getDb() {
       _sql = postgres(process.env.DATABASE_URL, {
         prepare: false,
         connect_timeout: 10,
-        idle_timeout: 120,
+        idle_timeout: 20,
         max_lifetime: 60 * 30,
-        max: 10,
       });
       _db = drizzle(_sql);
       // Test the connection immediately
