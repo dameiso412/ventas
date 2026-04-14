@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1";
 import * as metaAds from "./meta-ads";
+import { reanalyzeTranscript } from "./_core/transcription";
 import { performFullSync } from "./cron-meta-sync";
 import {
   COST_BENCHMARKS, RATE_BENCHMARKS, evaluateMetric,
@@ -951,6 +952,15 @@ export const appRouter = router({
           ...data,
           actionItems: data.actionItems ? data.actionItems : undefined,
         });
+      }),
+    reanalyze: crmProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const audit = await db.getCallAuditById(input.id);
+        if (!audit) throw new Error("Auditoria no encontrada");
+        if (!audit.recordingTranscript) throw new Error("No hay transcripcion disponible para reanalizar");
+        await reanalyzeTranscript(audit.id, audit.recordingTranscript);
+        return { success: true };
       }),
   }),
 

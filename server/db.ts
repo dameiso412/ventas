@@ -1554,6 +1554,13 @@ export async function updateCallAuditReview(id: number, data: {
   return getCallAuditById(id);
 }
 
+export async function updateCallAudit(id: number, data: Partial<InsertCallAudit>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(callAudits).set({ ...data, updatedAt: new Date() }).where(eq(callAudits.id, id));
+  return getCallAuditById(id);
+}
+
 export async function getCallAuditStats() {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

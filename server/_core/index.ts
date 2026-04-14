@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { webhookRouter } from "../webhook";
 import { apiRouter } from "../api-v1";
+import { uploadRouter } from "../upload";
 import { startCronSync } from "../cron-meta-sync";
 import { startKpiMonitor } from "../cron-kpi-monitor";
 
@@ -46,6 +47,8 @@ async function startServer() {
   app.use(webhookRouter);
   // API v1 routes (external access with API Key auth)
   app.use(apiRouter);
+  // File upload routes (call recordings)
+  app.use(uploadRouter);
   // tRPC API
   app.use(
     "/api/trpc",

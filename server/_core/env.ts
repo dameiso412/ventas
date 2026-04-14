@@ -12,4 +12,5 @@ export const ENV = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
   manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };
