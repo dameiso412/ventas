@@ -13,6 +13,7 @@ import { apiRouter } from "../api-v1";
 import { uploadRouter } from "../upload";
 import { startCronSync } from "../cron-meta-sync";
 import { startKpiMonitor } from "../cron-kpi-monitor";
+import { getDb, resetDb } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -49,6 +50,21 @@ async function startServer() {
   app.use(apiRouter);
   // File upload routes (call recordings)
   app.use(uploadRouter);
+  // Health check endpoint (diagnose DB connectivity)
+  app.get("/api/health", async (_req, res) => {
+    const start = Date.now();
+    try {
+      const db = await getDb();
+      const latency = Date.now() - start;
+      if (db) {
+        res.json({ status: "ok", db: "connected", latencyMs: latency, env: !!process.env.DATABASE_URL });
+      } else {
+        res.status(503).json({ status: "error", db: "disconnected", latencyMs: latency, env: !!process.env.DATABASE_URL });
+      }
+    } catch (err: any) {
+      res.status(503).json({ status: "error", db: "failed", error: err.message, env: !!process.env.DATABASE_URL });
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",

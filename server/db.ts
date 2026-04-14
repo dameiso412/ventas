@@ -33,32 +33,56 @@ import { calculateBusinessHours } from '../shared/businessHours';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _sql: ReturnType<typeof postgres> | null = null;
+let _lastHealthCheck = 0;
+const HEALTH_CHECK_INTERVAL = 30_000; // 30s
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
+  // If we have a cached connection, verify it's still alive periodically
+  if (_db && _sql) {
+    const now = Date.now();
+    if (now - _lastHealthCheck > HEALTH_CHECK_INTERVAL) {
       try {
-        _sql = postgres(process.env.DATABASE_URL, {
-          prepare: false,
-          connect_timeout: 10,
-          idle_timeout: 20,
-          max_lifetime: 60 * 30,
-        });
-        _db = drizzle(_sql);
-        // Test the connection immediately
         await _sql`SELECT 1`;
-        console.log("[Database] Connected successfully");
-        break;
-      } catch (error) {
-        console.warn(`[Database] Connection attempt ${attempt}/3 failed:`, error);
-        try { if (_sql) await _sql.end(); } catch {}
+        _lastHealthCheck = now;
+      } catch {
+        console.warn("[Database] Stale connection detected, reconnecting...");
+        try { await _sql.end(); } catch {}
         _db = null;
         _sql = null;
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
     }
+    if (_db) return _db;
   }
-  return _db;
+
+  if (!process.env.DATABASE_URL) {
+    console.error("[Database] DATABASE_URL is not set!");
+    return null;
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      _sql = postgres(process.env.DATABASE_URL, {
+        prepare: false,
+        connect_timeout: 30,
+        idle_timeout: 20,
+        max_lifetime: 60 * 30,
+      });
+      _db = drizzle(_sql);
+      await _sql`SELECT 1`;
+      _lastHealthCheck = Date.now();
+      console.log("[Database] Connected successfully");
+      return _db;
+    } catch (error) {
+      console.warn(`[Database] Connection attempt ${attempt}/3 failed:`, error);
+      try { if (_sql) await _sql.end(); } catch {}
+      _db = null;
+      _sql = null;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
+
+  console.error("[Database] All 3 connection attempts failed");
+  return null;
 }
 
 /** Force reconnect (e.g. after connection failure) */
@@ -68,6 +92,7 @@ export async function resetDb() {
   }
   _db = null;
   _sql = null;
+  _lastHealthCheck = 0;
 }
 
 // ==================== USERS ====================
@@ -127,7 +152,7 @@ export async function getLeads(filters?: {
   timeFilter?: "proximas" | "pasadas";
 }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("No se pudo conectar a la base de datos. Verifica la conexion.");
   const conditions = [];
   if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
   if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
@@ -151,7 +176,7 @@ export async function getLeads(filters?: {
 
 export async function getLeadById(id: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const result = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
   return result[0] || null;
 }
@@ -200,7 +225,7 @@ export async function bulkDeleteLeads(ids: number[]) {
  */
 export async function findLeadByEmailOrPhone(correo?: string | null, telefono?: string | null) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   if (correo) {
     const result = await db.select().from(leads).where(eq(leads.correo, correo)).orderBy(desc(leads.createdAt)).limit(1);
     if (result.length > 0) return result[0];
@@ -222,7 +247,7 @@ export async function createLeadScoring(scoring: InsertLeadScoring) {
 
 export async function getLeadScoringByLeadId(leadId: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   // Get the most recent scoring record (ordered by id DESC) to ensure we get the one with actual data
   const result = await db.select().from(leadScoring).where(eq(leadScoring.leadId, leadId)).orderBy(desc(leadScoring.id)).limit(1);
   return result[0] || null;
@@ -231,14 +256,14 @@ export async function getLeadScoringByLeadId(leadId: number) {
 // Find scoring by correo (fallback when leadId doesn't match)
 export async function getLeadScoringByCorreo(correo: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const result = await db.select().from(leadScoring).where(eq(leadScoring.correo, correo)).orderBy(desc(leadScoring.id)).limit(1);
   return result[0] || null;
 }
 
 export async function getAllLeadScoring(filters?: { scoreLabel?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions = [];
   if (filters?.scoreLabel) conditions.push(eq(leadScoring.scoreLabel, filters.scoreLabel as any));
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -255,7 +280,7 @@ export async function createLeadDataEntry(entry: InsertLeadDataEntry) {
 
 export async function getLeadDataEntries(leadId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(leadDataEntries)
     .where(eq(leadDataEntries.leadId, leadId))
     .orderBy(desc(leadDataEntries.createdAt));
@@ -263,7 +288,7 @@ export async function getLeadDataEntries(leadId: number) {
 
 export async function getLatestLeadDataEntry(leadId: number, source?: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const conditions = [eq(leadDataEntries.leadId, leadId)];
   if (source) conditions.push(eq(leadDataEntries.source, source));
   const [result] = await db.select().from(leadDataEntries)
@@ -287,7 +312,7 @@ export async function getSetterActivities(filters?: {
   semana?: number;
 }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions = [];
   if (filters?.setter) conditions.push(eq(setterActivities.setter, filters.setter));
   if (filters?.mes) conditions.push(eq(setterActivities.mes, filters.mes));
@@ -329,7 +354,7 @@ export async function getCloserActivities(filters?: {
   semana?: number;
 }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions = [];
   if (filters?.closer) conditions.push(eq(closerActivities.closer, filters.closer));
   if (filters?.mes) conditions.push(eq(closerActivities.mes, filters.mes));
@@ -380,7 +405,7 @@ export async function upsertMonthlyMetrics(data: InsertMonthlyMetric) {
  */
 export async function getCurrentMonthMetrics() {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const now = new Date();
   const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -401,7 +426,7 @@ const MESES_ARRAY = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
  */
 export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const mesNum = MESES_ARRAY.indexOf(mes) + 1;
   if (mesNum === 0) return null;
@@ -441,7 +466,7 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
  */
 export async function getWeeklyAdMetrics(mes: string, semana: number, anio: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const mesNum = MESES_ARRAY.indexOf(mes) + 1;
   if (mesNum === 0) return null;
@@ -470,7 +495,7 @@ export async function getWeeklyAdMetrics(mes: string, semana: number, anio: numb
  */
 export async function getMarketingKPIs(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   // Get lead-based metrics for the filtered period
   const conditions = [];
@@ -553,7 +578,7 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
 
 export async function getMonthlyMetrics(anio?: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   if (anio) {
     return db.select().from(monthlyMetrics).where(eq(monthlyMetrics.anio, anio)).orderBy(asc(monthlyMetrics.mes));
   }
@@ -563,7 +588,7 @@ export async function getMonthlyMetrics(anio?: number) {
 // ==================== DASHBOARD KPIs ====================
 export async function getDashboardKPIs(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const conditions = [];
   if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
@@ -607,7 +632,7 @@ export async function getDashboardKPIs(filters?: { mes?: string; semana?: number
 // ==================== LEADERBOARD ====================
 export async function getSetterLeaderboard(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions = [];
   if (filters?.mes) conditions.push(eq(setterActivities.mes, filters.mes));
   if (filters?.semana) conditions.push(eq(setterActivities.semana, filters.semana));
@@ -633,7 +658,7 @@ export async function getSetterLeaderboard(filters?: { mes?: string; semana?: nu
 
 export async function getCloserLeaderboard(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions = [];
   if (filters?.mes) conditions.push(eq(closerActivities.mes, filters.mes));
   if (filters?.semana) conditions.push(eq(closerActivities.semana, filters.semana));
@@ -657,7 +682,7 @@ export async function getCloserLeaderboard(filters?: { mes?: string; semana?: nu
 // ==================== DISTINCT VALUES (for filters) ====================
 export async function getDistinctValues() {
   const db = await getDb();
-  if (!db) return { meses: [], setters: [], closers: [] };
+  if (!db) throw new Error("Database not available");
 
   const [meses, setters, closers, setterAct, closerAct] = await Promise.all([
     db.selectDistinct({ mes: leads.mes }).from(leads).where(sql`${leads.mes} IS NOT NULL`),
@@ -684,7 +709,7 @@ export async function getDistinctValues() {
  */
 export async function getSetterTrackerKPIs(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const conditions = [];
   if (filters?.mes) conditions.push(eq(setterActivities.mes, filters.mes));
@@ -723,7 +748,7 @@ export async function getSetterTrackerKPIs(filters?: { mes?: string; semana?: nu
  */
 export async function getCloserTrackerKPIs(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const conditions = [];
   if (filters?.mes) conditions.push(eq(closerActivities.mes, filters.mes));
@@ -762,7 +787,7 @@ export async function getCloserTrackerKPIs(filters?: { mes?: string; semana?: nu
  */
 export async function getDataValidation(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   // Lead-based metrics (automated/webhook source)
   const lConditions = [];
@@ -859,7 +884,7 @@ export async function createCloserProjection(data: InsertCloserProjection) {
 
 export async function getCloserProjections(filters?: { mes?: string; anio?: number; closer?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   
   const conditions = [];
   if (filters?.mes) conditions.push(eq(closerProjections.mes, filters.mes));
@@ -872,7 +897,7 @@ export async function getCloserProjections(filters?: { mes?: string; anio?: numb
 
 export async function getCloserProjectionById(id: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   const rows = await db.select().from(closerProjections).where(eq(closerProjections.id, id));
   return rows[0] ?? null;
@@ -912,7 +937,7 @@ export async function deleteCloserProjection(id: number) {
 // Get actual tracker data for a closer projection's date range and compare vs goals
 export async function getCloserProjectionWithActuals(projectionId: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   const proj = await getCloserProjectionById(projectionId);
   if (!proj) return null;
@@ -1019,7 +1044,7 @@ export async function createSetterProjection(data: InsertSetterProjection) {
 
 export async function getSetterProjections(filters?: { mes?: string; anio?: number; setter?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   
   const conditions = [];
   if (filters?.mes) conditions.push(eq(setterProjections.mes, filters.mes));
@@ -1032,7 +1057,7 @@ export async function getSetterProjections(filters?: { mes?: string; anio?: numb
 
 export async function getSetterProjectionById(id: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   const rows = await db.select().from(setterProjections).where(eq(setterProjections.id, id));
   return rows[0] ?? null;
@@ -1055,7 +1080,7 @@ export async function deleteSetterProjection(id: number) {
 // Get actual tracker data for a setter projection's date range and compare vs goals
 export async function getSetterProjectionWithActuals(projectionId: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   const proj = await getSetterProjectionById(projectionId);
   if (!proj) return null;
@@ -1201,7 +1226,7 @@ export async function getWeightedCloserLeaderboard(filters?: { mes?: string; sem
 // ==================== P2: TEAM SUMMARY BY MONTH ====================
 export async function getSetterTeamSummaryByMonth(anio?: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const year = anio ?? new Date().getFullYear();
   const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   
@@ -1225,7 +1250,7 @@ export async function getSetterTeamSummaryByMonth(anio?: number) {
 
 export async function getCloserTeamSummaryByMonth(anio?: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   
   const results = await db.select({
@@ -1248,7 +1273,7 @@ export async function getCloserTeamSummaryByMonth(anio?: number) {
 // ==================== P6: REP PROFILE (individual rep summary) ====================
 export async function getSetterRepProfile(setter: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   // Monthly breakdown
   const monthly = await db.select({
@@ -1324,7 +1349,7 @@ export async function getSetterRepProfile(setter: string) {
 
 export async function getCloserRepProfile(closer: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   
   const monthly = await db.select({
     mes: closerActivities.mes,
@@ -1400,7 +1425,7 @@ export async function getCloserRepProfile(closer: string) {
 // ==================== P5: SMART ALERTS ====================
 export async function getSmartAlerts() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   
   const alerts: { type: string; severity: 'info' | 'warning' | 'critical' | 'success'; title: string; description: string; rep?: string; department?: string }[] = [];
   
@@ -1603,7 +1628,7 @@ export async function getFollowUps(filters?: {
   prioridad?: string;
 }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   let query = db.select().from(followUps);
   const conditions: any[] = [];
   if (filters?.tipo) conditions.push(eq(followUps.tipo, filters.tipo as any));
@@ -1618,7 +1643,7 @@ export async function getFollowUps(filters?: {
 
 export async function getFollowUpById(id: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const rows = await db.select().from(followUps).where(eq(followUps.id, id)).limit(1);
   return rows[0] ?? null;
 }
@@ -1646,7 +1671,7 @@ export async function deleteFollowUp(id: number) {
 
 export async function getFollowUpStats() {
   const db = await getDb();
-  if (!db) return { hotCount: 0, warmCount: 0, totalActivos: 0, cerradosGanados: 0, cerradosPerdidos: 0, vencidos: 0, montoEstimadoTotal: 0 };
+  if (!db) throw new Error("Database not available");
   
   const all = await db.select().from(followUps);
   const activos = all.filter(f => f.estado === "ACTIVO");
@@ -1723,7 +1748,7 @@ export async function createFollowUpFromLead(leadId: number, closerAsignado?: st
 
 export async function getFollowUpLogs(followUpId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(followUpLogs)
     .where(eq(followUpLogs.followUpId, followUpId))
     .orderBy(desc(followUpLogs.createdAt));
@@ -1764,7 +1789,7 @@ export async function updateWebhookLog(id: number, data: Partial<InsertWebhookLo
 
 export async function getWebhookLogs(limit: number = 50) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(webhookLogs).orderBy(desc(webhookLogs.createdAt)).limit(limit);
 }
 
@@ -1774,7 +1799,7 @@ export async function getWebhookLogs(limit: number = 50) {
  */
 export async function findLeadByName(nombre: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const trimmed = nombre.trim();
   if (!trimmed) return null;
   const result = await db.select().from(leads)
@@ -1929,7 +1954,7 @@ export async function deleteContactAttempt(id: number) {
 export async function getFirstContactAttemptForLeads(leadIds: number[]) {
   if (leadIds.length === 0) return [];
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   
   const rows = await db.execute(
     sql`SELECT "leadId", MIN(timestamp) as "firstAttempt", COUNT(*) as "attemptCount"
@@ -2119,7 +2144,7 @@ export async function upsertAdCampaign(data: { campaignId: string; name?: string
 
 export async function getAdCampaigns() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(adCampaigns).orderBy(desc(adCampaigns.updatedAt));
 }
 
@@ -2139,7 +2164,7 @@ export async function upsertAdAdset(data: { adsetId: string; campaignId: string;
 
 export async function getAdAdsets(campaignId?: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [];
   if (campaignId) conditions.push(eq(adAdsets.campaignId, campaignId));
   return db.select().from(adAdsets)
@@ -2163,7 +2188,7 @@ export async function upsertAdAd(data: { adId: string; adsetId?: string; campaig
 
 export async function getAdAds(filters?: { campaignId?: string; adsetId?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [];
   if (filters?.campaignId) conditions.push(eq(adAds.campaignId, filters.campaignId));
   if (filters?.adsetId) conditions.push(eq(adAds.adsetId, filters.adsetId));
@@ -2210,7 +2235,7 @@ export async function getAdMetricsDaily(filters?: {
   adId?: string;
 }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [];
   if (filters?.dateFrom) conditions.push(gte(adMetricsDaily.fecha, new Date(filters.dateFrom)));
   if (filters?.dateTo) conditions.push(lte(adMetricsDaily.fecha, new Date(filters.dateTo)));
@@ -2228,7 +2253,7 @@ export async function getAdMetricsDaily(filters?: {
  */
 export async function getAdMetricsByCampaign(dateFrom?: string, dateTo?: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [];
   if (dateFrom) conditions.push(gte(adMetricsDaily.fecha, new Date(dateFrom)));
   if (dateTo) conditions.push(lte(adMetricsDaily.fecha, new Date(dateTo)));
@@ -2259,7 +2284,7 @@ export async function getAdMetricsByCampaign(dateFrom?: string, dateTo?: string)
  */
 export async function getAdMetricsByAdset(campaignId: string, dateFrom?: string, dateTo?: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [eq(adMetricsDaily.campaignId, campaignId)];
   if (dateFrom) conditions.push(gte(adMetricsDaily.fecha, new Date(dateFrom)));
   if (dateTo) conditions.push(lte(adMetricsDaily.fecha, new Date(dateTo)));
@@ -2284,7 +2309,7 @@ export async function getAdMetricsByAdset(campaignId: string, dateFrom?: string,
  */
 export async function getAdMetricsByAd(adsetId: string, dateFrom?: string, dateTo?: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [eq(adMetricsDaily.adsetId, adsetId)];
   if (dateFrom) conditions.push(gte(adMetricsDaily.fecha, new Date(dateFrom)));
   if (dateTo) conditions.push(lte(adMetricsDaily.fecha, new Date(dateTo)));
@@ -2310,7 +2335,7 @@ export async function getAdMetricsByAd(adsetId: string, dateFrom?: string, dateT
  */
 export async function getLeadAttribution(filters?: { dateFrom?: string; dateTo?: string; campaignId?: string }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [];
   if (filters?.dateFrom) conditions.push(gte(leads.fecha, new Date(filters.dateFrom)));
   if (filters?.dateTo) conditions.push(lte(leads.fecha, new Date(filters.dateTo)));
@@ -2339,7 +2364,7 @@ export async function getLeadAttribution(filters?: { dateFrom?: string; dateTo?:
  */
 export async function getLeadCountByUtmCampaign(dateFrom?: string, dateTo?: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   const conditions: any[] = [sql`${leads.utmCampaign} IS NOT NULL AND ${leads.utmCampaign} != ''`];
   if (dateFrom) conditions.push(gte(leads.fecha, new Date(dateFrom)));
   if (dateTo) conditions.push(lte(leads.fecha, new Date(dateTo)));
@@ -2360,7 +2385,7 @@ export async function getLeadCountByUtmCampaign(dateFrom?: string, dateTo?: stri
  */
 export async function getAdSpendTrend(dateFrom: string, dateTo: string) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select({
     fecha: adMetricsDaily.fecha,
     totalSpend: sql<number>`SUM(${adMetricsDaily.spend})`,
@@ -2408,7 +2433,7 @@ export async function updateSyncLog(id: number, data: {
 
 export async function getLastSyncLog(syncType?: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const conditions = syncType ? [eq(syncLog.syncType, syncType), eq(syncLog.status, "success")] : [eq(syncLog.status, "success")];
   const rows = await db.select().from(syncLog).where(and(...conditions)).orderBy(desc(syncLog.createdAt)).limit(1);
   return rows[0] ?? null;
@@ -2416,7 +2441,7 @@ export async function getLastSyncLog(syncType?: string) {
 
 export async function getSyncLogs(limit: number = 20) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(syncLog).orderBy(desc(syncLog.createdAt)).limit(limit);
 }
 
@@ -2455,7 +2480,7 @@ export type WorkQueueItem = {
  */
 export async function getSetterWorkQueue(setter?: string): Promise<WorkQueueItem[]> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2713,7 +2738,7 @@ export async function getConfirmationQueue(setter?: string): Promise<{
   stats: { total: number; confirmadas: number; pendientes: number; tasa: number };
 }> {
   const db = await getDb();
-  if (!db) return { urgente: [], pronto: [], planificar: [], stats: { total: 0, confirmadas: 0, pendientes: 0, tasa: 0 } };
+  if (!db) throw new Error("Database not available");
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2919,7 +2944,7 @@ export async function createFollowUpFromNoShow(leadId: number, closerAsignado?: 
 
 export async function checkEmailAllowed(email: string): Promise<AllowedEmail | null> {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const normalized = email.toLowerCase().trim();
   const result = await db.select().from(allowedEmails)
     .where(and(eq(allowedEmails.email, normalized), eq(allowedEmails.activo, 1)))
@@ -2929,7 +2954,7 @@ export async function checkEmailAllowed(email: string): Promise<AllowedEmail | n
 
 export async function getAllowedEmails(): Promise<AllowedEmail[]> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(allowedEmails).orderBy(allowedEmails.nombre);
 }
 
@@ -2964,7 +2989,7 @@ export async function deleteAllowedEmail(id: number): Promise<void> {
 
 export async function getAllUsers() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select({
     id: users.id,
     authId: users.authId,
@@ -3093,7 +3118,7 @@ export async function createRevenueScenario(data: InsertRevenueScenario) {
 
 export async function getRevenueScenarios() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db.select().from(revenueScenarios)
     .where(eq(revenueScenarios.isActive, 1))
     .orderBy(desc(revenueScenarios.updatedAt));
@@ -3101,7 +3126,7 @@ export async function getRevenueScenarios() {
 
 export async function getRevenueScenarioById(id: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const rows = await db.select().from(revenueScenarios).where(eq(revenueScenarios.id, id));
   return rows[0] || null;
 }
@@ -3128,7 +3153,7 @@ export async function deleteRevenueScenario(id: number) {
  */
 export async function getSpeedToLeadAlerts(thresholdMinutes: number = 30) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
   const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000);
   const rows = await db
@@ -3161,7 +3186,7 @@ export async function getSpeedToLeadAlerts(thresholdMinutes: number = 30) {
  */
 export async function getUnassignedLeads() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   return db
@@ -3187,7 +3212,7 @@ export async function getUnassignedLeads() {
  */
 export async function getStaleSeguimientos(hoursThreshold: number = 72) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
   const cutoff = new Date(Date.now() - hoursThreshold * 60 * 60 * 1000);
   return db
@@ -3212,7 +3237,7 @@ export async function getStaleSeguimientos(hoursThreshold: number = 72) {
  */
 export async function getHourlySummaryStats() {
   const db = await getDb();
-  if (!db) return { newLeads: 0, contacted: 0, confirmed: 0 };
+  if (!db) throw new Error("Database not available");
 
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
@@ -3247,7 +3272,7 @@ export async function getHourlySummaryStats() {
 
 export async function findLeadByInstagram(handle: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const results = await db
     .select()
     .from(leads)
@@ -3258,7 +3283,7 @@ export async function findLeadByInstagram(handle: string) {
 
 export async function findLeadByManychatId(subscriberId: string) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
   const results = await db
     .select()
     .from(leads)
@@ -3291,7 +3316,7 @@ export async function createManychatEvent(data: {
 
 export async function getManychatEvents(limit: number = 50) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
   return db
     .select()
     .from(manychatEvents)
@@ -3301,7 +3326,7 @@ export async function getManychatEvents(limit: number = 50) {
 
 export async function getInstagramFunnelKPIs(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) throw new Error("Database not available");
 
   const conditions = [eq(leads.origen, "INSTAGRAM")];
   if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
@@ -3327,7 +3352,7 @@ export async function getInstagramFunnelKPIs(filters?: { mes?: string; semana?: 
 
 export async function getSetterIgPerformance(filters?: { mes?: string; semana?: number }) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) throw new Error("Database not available");
 
   const conditions: any[] = [];
   if (filters?.mes) conditions.push(eq(setterActivities.mes, filters.mes));
