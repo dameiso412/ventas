@@ -118,7 +118,7 @@ export default function Home() {
     semana: semana !== "all" ? parseInt(semana) : undefined,
   }), [mes, semana]);
 
-  const { data: kpis, isLoading } = trpc.dashboard.kpis.useQuery(filters);
+  const { data: kpis, isLoading, isError, error } = trpc.dashboard.kpis.useQuery(filters);
   const { data: mktKpis } = trpc.dashboard.marketingKPIs.useQuery(filters);
   const { data: trackerKpis } = trpc.dashboard.trackerKPIs.useQuery(filters);
   const { data: filterValues } = trpc.filters.distinctValues.useQuery();
@@ -294,6 +294,19 @@ export default function Home() {
           </Select>
         </div>
       </div>
+
+      {/* Connection Error Banner */}
+      {isError && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
+            <span className="text-red-400 text-lg">!</span>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-400">Error de conexion a la base de datos</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{(error as any)?.message || "No se pudieron cargar los datos. Intenta recargar la pagina."}</p>
+          </div>
+        </div>
+      )}
 
       {/* Data Validation Alerts */}
       <DataValidationAlert filters={filters} />

@@ -113,7 +113,7 @@ export default function Citas() {
     timeFilter: vista === "AGENDAS" ? timeFilter : undefined,
   }), [mes, semana, origen, setter, closer, scoreFilter, outcomeFilter, tipoFilter, vista, estadoLeadFilter, timeFilter]);
 
-  const { data: leads, isLoading } = trpc.leads.list.useQuery(filters);
+  const { data: leads, isLoading, isError, error } = trpc.leads.list.useQuery(filters);
 
   // Count of leads in each view for the toggle badges
   const { data: agendaCountData } = trpc.leads.list.useQuery({ categoria: "AGENDA" }, { select: (d) => d?.length || 0 });
@@ -482,7 +482,14 @@ export default function Citas() {
       />
 
       {/* Lead Cards / Pipeline Board */}
-      {isLoading ? (
+      {isError ? (
+        <div className="text-center py-8 space-y-3">
+          <AlertTriangle className="h-10 w-10 mx-auto text-red-400" />
+          <p className="text-sm text-red-400 font-medium">Error al cargar datos</p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">{(error as any)?.message || "No se pudo conectar a la base de datos"}</p>
+          <Button variant="outline" size="sm" onClick={() => { utils.leads.list.invalidate(); }}>Reintentar</Button>
+        </div>
+      ) : isLoading ? (
         <div className="text-center py-8 text-muted-foreground text-sm">Cargando...</div>
       ) : filteredLeads.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">

@@ -14,7 +14,7 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 60 * 2,       // 2 minutes before data is considered stale
       gcTime: 1000 * 60 * 10,          // 10 minutes garbage collection
       refetchOnWindowFocus: false,      // Don't refetch on tab switch
-      retry: 1,                         // Single retry instead of default 3
+      retry: 2,                         // 2 retries on failure
     },
   },
 });
