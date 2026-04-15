@@ -8,6 +8,7 @@ import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1"
 import * as metaAds from "./meta-ads";
 import { reanalyzeTranscript } from "./_core/transcription";
 import { performFullSync } from "./cron-meta-sync";
+import { sendSlackAlert } from "./_core/slack";
 import {
   COST_BENCHMARKS, RATE_BENCHMARKS, evaluateMetric,
   CONSTRAINT_SCENARIOS, HEALTH_COLORS,
@@ -897,6 +898,20 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const followUpId = await db.createFollowUpFromNoShow(input.leadId, input.closerAsignado, input.notas);
+
+        // Slack alert: NO SHOW detected
+        try {
+          const lead = await db.getLeadById(input.leadId);
+          const leadName = lead?.nombre || lead?.correo || `Lead #${input.leadId}`;
+          await sendSlackAlert({
+            severity: "critical",
+            title: `NO SHOW — Protocolo anti-no-show activado`,
+            body: `• *Lead:* ${leadName}\n• *Closer:* ${input.closerAsignado || "N/A"}\n• *Follow-up:* Creado como RED_HOT (#${followUpId})`,
+          });
+        } catch (err) {
+          console.error("[NoShow] Slack alert failed:", err);
+        }
+
         return { followUpId };
       }),
 

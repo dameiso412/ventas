@@ -3268,6 +3268,159 @@ export async function getHourlySummaryStats() {
   };
 }
 
+// ==================== SLACK ALERT QUERIES ====================
+
+/**
+ * Appointments that already passed but attendance was never recorded.
+ * Only looks at last 24h to avoid flooding with old data.
+ */
+export async function getOverdueAppointments() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  return db
+    .select({
+      id: leads.id,
+      nombre: leads.nombre,
+      correo: leads.correo,
+      closer: leads.closer,
+      setter: leads.setterAsignado,
+      fecha: leads.fecha,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.categoria, "AGENDA"),
+        eq(leads.asistencia, "PENDIENTE"),
+        lte(leads.fecha, now),
+        gte(leads.fecha, yesterday)
+      )
+    )
+    .orderBy(asc(leads.fecha));
+}
+
+/**
+ * Follow-ups that are overdue or stale (no recent activity).
+ */
+export async function getStaleFollowUps(staleDays: number = 5) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - staleDays * 24 * 60 * 60 * 1000);
+
+  // Overdue: proximoFollowUp is in the past
+  const overdue = await db
+    .select({
+      id: followUps.id,
+      leadId: followUps.leadId,
+      tipo: followUps.tipo,
+      closer: followUps.closerAsignado,
+      proximoFollowUp: followUps.proximoFollowUp,
+      ultimoFollowUp: followUps.ultimoFollowUp,
+    })
+    .from(followUps)
+    .where(
+      and(
+        eq(followUps.estado, "ACTIVO"),
+        lte(followUps.proximoFollowUp, now)
+      )
+    )
+    .orderBy(asc(followUps.proximoFollowUp));
+
+  // Stale: no activity in N days (based on ultimoFollowUp)
+  const stale = await db
+    .select({
+      id: followUps.id,
+      leadId: followUps.leadId,
+      tipo: followUps.tipo,
+      closer: followUps.closerAsignado,
+      proximoFollowUp: followUps.proximoFollowUp,
+      ultimoFollowUp: followUps.ultimoFollowUp,
+    })
+    .from(followUps)
+    .where(
+      and(
+        eq(followUps.estado, "ACTIVO"),
+        or(
+          lte(followUps.ultimoFollowUp, staleThreshold),
+          isNull(followUps.ultimoFollowUp)
+        )
+      )
+    )
+    .orderBy(asc(followUps.ultimoFollowUp));
+
+  // Today's follow-ups (heads-up)
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const todayFollowUps = await db
+    .select({
+      id: followUps.id,
+      leadId: followUps.leadId,
+      tipo: followUps.tipo,
+      closer: followUps.closerAsignado,
+      proximoFollowUp: followUps.proximoFollowUp,
+    })
+    .from(followUps)
+    .where(
+      and(
+        eq(followUps.estado, "ACTIVO"),
+        gte(followUps.proximoFollowUp, now),
+        lte(followUps.proximoFollowUp, tomorrow)
+      )
+    )
+    .orderBy(asc(followUps.proximoFollowUp));
+
+  return { overdue, stale, todayFollowUps };
+}
+
+/**
+ * Escalated confirmation check: leads with upcoming demos split by urgency tier.
+ */
+export async function getEscalatedConfirmations() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const now = new Date();
+  const in1h = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+  const in4h = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  const base = and(
+    eq(leads.categoria, "AGENDA"),
+    eq(leads.estadoConfirmacion, "PENDIENTE"),
+    gte(leads.fecha, now)
+  );
+
+  const cols = {
+    id: leads.id,
+    nombre: leads.nombre,
+    correo: leads.correo,
+    setter: leads.setterAsignado,
+    closer: leads.closer,
+    fecha: leads.fecha,
+  };
+
+  // T-1h: critical
+  const within1h = await db.select(cols).from(leads)
+    .where(and(base, lte(leads.fecha, in1h)))
+    .orderBy(asc(leads.fecha));
+
+  // T-4h: warning (excluding those already in 1h bucket)
+  const within4h = await db.select(cols).from(leads)
+    .where(and(base, gte(leads.fecha, in1h), lte(leads.fecha, in4h)))
+    .orderBy(asc(leads.fecha));
+
+  // T-24h: info (excluding 4h bucket)
+  const within24h = await db.select(cols).from(leads)
+    .where(and(base, gte(leads.fecha, in4h), lte(leads.fecha, in24h)))
+    .orderBy(asc(leads.fecha));
+
+  return { within1h, within4h, within24h };
+}
+
 // ==================== INSTAGRAM FUNNEL ====================
 
 export async function findLeadByInstagram(handle: string) {

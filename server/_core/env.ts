@@ -13,4 +13,7 @@ export const ENV = {
   manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
   manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  appUrl: process.env.APP_URL || process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "http://localhost:3000",
 };

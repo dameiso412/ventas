@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { ENV } from "./env";
 import { updateCallAudit, createLeadDataEntry } from "../db";
+import { sendSlackAlert } from "./slack";
 
 let _openai: OpenAI | null = null;
 let _anthropic: Anthropic | null = null;
@@ -287,6 +288,23 @@ async function analyzeTranscript(
     } catch (err) {
       console.error(`[Transcription] Failed to save prospect notes for audit #${auditId}:`, err);
     }
+  }
+
+  // Slack notification: triage analysis completed
+  try {
+    const grade = audit.grading ?? 0;
+    const leadLabel = leadContext?.leadName || (leadContext?.leadId ? `Lead #${leadContext.leadId}` : "Sin lead");
+    const closerLabel = leadContext?.closer || "N/A";
+    await sendSlackAlert({
+      severity: grade >= 7 ? "success" : grade >= 4 ? "info" : "warning",
+      title: `Análisis de triage completado — ${grade}/10`,
+      body: `• *Lead:* ${leadLabel}\n• *Closer:* ${closerLabel}\n• *Demo agendada:* ${audit.demoAgendada ? "Sí ✅" : "No ❌"}`,
+      fields: audit.etapasCompletadas
+        ? [{ label: "Etapas completadas", value: audit.etapasCompletadas }]
+        : undefined,
+    });
+  } catch (err) {
+    console.error(`[Transcription] Slack notification failed for audit #${auditId}:`, err);
   }
 }
 
