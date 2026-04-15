@@ -258,8 +258,13 @@ export default function Home() {
     });
   };
 
-  const fmt = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(0)}`;
+  const fmt = (n: number) => {
+    if (n >= 10000) return `$${(n / 1000).toFixed(1)}k`;
+    if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    return `$${n.toFixed(2)}`;
+  };
   const fmtFull = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const pct = (n: number, hasData: boolean) => hasData ? `${n.toFixed(1)}%` : "—";
 
   return (
     <div className="space-y-6">
@@ -363,8 +368,8 @@ export default function Home() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="bg-card/60 rounded-lg p-3 border border-primary/20">
-                <p className="text-[10px] text-muted-foreground uppercase">Ad Spend MTD</p>
-                <p className="text-xl font-bold text-primary">{fmtFull(adSpend)}</p>
+                <p className="text-[10px] text-muted-foreground uppercase">Ad Spend MTD (USD)</p>
+                <p className="text-xl font-bold text-primary">{adSpend > 0 ? fmt(adSpend) : "$0"}</p>
               </div>
               <div className="bg-card/60 rounded-lg p-3 border border-border/30">
                 <p className="text-[10px] text-muted-foreground uppercase">Total Leads Raw</p>
@@ -393,8 +398,8 @@ export default function Home() {
           <DollarSign className="h-3.5 w-3.5" /> Costos de Adquisición
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-          <CostKPICard title="CPL" value={cpl > 0 ? `$${cpl.toFixed(2)}` : "—"} benchmark="Ideal: < $1 · Max: $5" icon={MousePointerClick} color={cpl > 0 && cpl <= 5 ? "#22c55e" : cpl > 5 ? "#ef4444" : undefined} tooltip="Costo por Lead. Cuánto cuesta que una persona deje sus datos después de ver el anuncio. Mide la eficiencia de la inversión publicitaria para generar interés inicial." />
-          <CostKPICard title="Costo / Agenda" value={costoPorAgenda > 0 ? `$${costoPorAgenda.toFixed(2)}` : "—"} benchmark="Ideal: $10-15 · Max: $35" icon={CalendarCheck} color={costoPorAgenda > 0 && costoPorAgenda <= 35 ? "#22c55e" : costoPorAgenda > 35 ? "#ef4444" : undefined} tooltip="Cuánto cuesta que un prospecto agende una demo en el calendario. Refleja la capacidad del funnel (VSL + encuesta) para convertir leads en citas reales." />
+          <CostKPICard title="CPL" value={cpl > 0 ? fmt(cpl) : "—"} benchmark="Ideal: < $1 · Max: $5" icon={MousePointerClick} color={cpl > 0 && cpl <= 5 ? "#22c55e" : cpl > 5 ? "#ef4444" : undefined} tooltip="Costo por Lead. Cuánto cuesta que una persona deje sus datos después de ver el anuncio. Mide la eficiencia de la inversión publicitaria para generar interés inicial." />
+          <CostKPICard title="Costo / Agenda" value={costoPorAgenda > 0 ? fmt(costoPorAgenda) : "—"} benchmark="Ideal: $10-15 · Max: $35" icon={CalendarCheck} color={costoPorAgenda > 0 && costoPorAgenda <= 35 ? "#22c55e" : costoPorAgenda > 35 ? "#ef4444" : undefined} tooltip="Cuánto cuesta que un prospecto agende una demo en el calendario. Refleja la capacidad del funnel (VSL + encuesta) para convertir leads en citas reales." />
           <CostKPICard title="Costo / Triage" value={costoPorTriage > 0 ? fmt(costoPorTriage) : "—"} benchmark="Ad Spend / Intros Efectivas" icon={Phone} tooltip="Cuánto cuesta que un setter logre tener una conversación telefónica con un prospecto. Mide la eficiencia del equipo de setters para contactar y hablar con las agendas." />
           <CostKPICard title="Costo / Demo Conf." value={costoPorDemoConfirmada > 0 ? fmt(costoPorDemoConfirmada) : "—"} benchmark="Ad Spend / Demos Confirmadas" icon={CalendarCheck} tooltip="Cuánto cuesta que una triage resulte en una demo confirmada. Mide la capacidad del setter de calificar al prospecto y asegurar su compromiso para asistir a la demo." />
           <CostKPICard title="Costo / Asistencia" value={costoPorAsistencia > 0 ? fmt(costoPorAsistencia) : "—"} benchmark="Demo asistida" icon={Eye} tooltip="Cuánto cuesta que un prospecto efectivamente se presente a la demo. Refleja la calidad de la confirmación y el compromiso real del prospecto." />
@@ -411,12 +416,12 @@ export default function Home() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3">
           <KPICard small title="Landing Opt-In" value={landingOptIn > 0 ? `${landingOptIn.toFixed(1)}%` : "—"} subtitle={`${totalLeadsRaw} / ${visitasLanding}`} icon={Globe} tooltip="Porcentaje de visitantes de la landing page que dejan sus datos. Mide qué tan persuasiva es la página y la VSL para generar interés." />
           <KPICard small title="Booking Rate" value={bookingRate > 0 ? `${bookingRate.toFixed(1)}%` : "—"} subtitle={`${totalAgendas} / ${totalLeadsRaw} leads`} icon={CalendarCheck} tooltip="Porcentaje de leads que efectivamente agendan una demo. Mide la capacidad de la encuesta de calificación y el calendario para convertir el interés en una cita concreta." />
-          <KPICard small title="Answer Rate" value={`${answerRate.toFixed(1)}%`} subtitle={`${stIntros} / ${stIntentos} intentos`} icon={Phone} color={answerRate < 30 ? "#ef4444" : "#22c55e"} tooltip="Tasa de contestación. De todos los intentos de llamada del setter, cuántos prospectos contestaron y se logró tener una conversación. Mide la eficiencia del setter para conectar con las agendas." />
-          <KPICard small title="DQ %" value={dqRate > 0 ? `${dqRate.toFixed(1)}%` : "—"} subtitle={`${dqCount} descalificados / ${stIntros} intros`} icon={TrendingDown} color={dqRate > 50 ? "#ef4444" : dqRate > 30 ? "#f59e0b" : "#22c55e"} tooltip="Tasa de Descalificación. De las conversaciones que tuvo el setter, cuántas no pasaron el filtro de calificación. Un DQ% alto puede indicar mala calidad de leads o targeting incorrecto en ads." />
-          <KPICard small title="Triage Rate" value={triageRate > 0 ? `${triageRate.toFixed(1)}%` : "—"} subtitle={`${stConfirmadas} / ${stIntros} intros`} icon={UserCheck} tooltip="Tasa de calificación y confirmación. De las conversaciones del setter, cuántas resultaron en una demo confirmada. Mide la capacidad del setter de pre-vender y asegurar el compromiso del prospecto." />
-          <KPICard small title="Show Rate" value={`${showRate.toFixed(1)}%`} subtitle={`${ctLive} / ${ctSchedule} schedule`} icon={Eye} color={showRate >= 80 ? "#22c55e" : "#f59e0b"} tooltip="Tasa de asistencia a demos. De las demos agendadas en el calendario del closer, cuántas personas realmente se presentaron. Refleja la calidad de la confirmación del setter y el nivel de compromiso del prospecto." />
-          <KPICard small title="Offer Rate" value={`${offerRate.toFixed(1)}%`} subtitle={`${ctOffers} / ${ctLive} live`} icon={Target} tooltip="Tasa de oferta. De las demos que se llevaron a cabo, en cuántas el closer llegó a presentar la oferta comercial. Mide la habilidad del closer para llevar la conversación al punto de cierre." />
-          <KPICard small title="Close Rate" value={`${closeRate.toFixed(1)}%`} subtitle={`${ctCloses} / ${ctOffers} ofertas`} icon={Zap} color={closeRate >= 30 ? "#22c55e" : "#f59e0b"} tooltip="Tasa de cierre. De las ofertas presentadas, cuántas se convirtieron en venta. Es el indicador más directo de la efectividad del closer para convertir oportunidades en clientes." />
+          <KPICard small title="Answer Rate" value={pct(answerRate, stIntentos > 0)} subtitle={`${stIntros} / ${stIntentos} intentos`} icon={Phone} color={stIntentos > 0 ? (answerRate < 30 ? "#ef4444" : "#22c55e") : undefined} tooltip="Tasa de contestación. De todos los intentos de llamada del setter, cuántos prospectos contestaron y se logró tener una conversación. Mide la eficiencia del setter para conectar con las agendas." />
+          <KPICard small title="DQ %" value={pct(dqRate, stIntros > 0)} subtitle={`${dqCount} descalificados / ${stIntros} intros`} icon={TrendingDown} color={stIntros > 0 ? (dqRate > 50 ? "#ef4444" : dqRate > 30 ? "#f59e0b" : "#22c55e") : undefined} tooltip="Tasa de Descalificación. De las conversaciones que tuvo el setter, cuántas no pasaron el filtro de calificación. Un DQ% alto puede indicar mala calidad de leads o targeting incorrecto en ads." />
+          <KPICard small title="Triage Rate" value={pct(triageRate, stIntros > 0)} subtitle={`${stConfirmadas} / ${stIntros} intros`} icon={UserCheck} tooltip="Tasa de calificación y confirmación. De las conversaciones del setter, cuántas resultaron en una demo confirmada. Mide la capacidad del setter de pre-vender y asegurar el compromiso del prospecto." />
+          <KPICard small title="Show Rate" value={pct(showRate, ctSchedule > 0)} subtitle={`${ctLive} / ${ctSchedule} schedule`} icon={Eye} color={ctSchedule > 0 ? (showRate >= 80 ? "#22c55e" : "#f59e0b") : undefined} tooltip="Tasa de asistencia a demos. De las demos agendadas en el calendario del closer, cuántas personas realmente se presentaron. Refleja la calidad de la confirmación del setter y el nivel de compromiso del prospecto." />
+          <KPICard small title="Offer Rate" value={pct(offerRate, ctLive > 0)} subtitle={`${ctOffers} / ${ctLive} live`} icon={Target} color={ctLive > 0 ? (offerRate >= 70 ? "#22c55e" : "#f59e0b") : undefined} tooltip="Tasa de oferta. De las demos que se llevaron a cabo, en cuántas el closer llegó a presentar la oferta comercial. Mide la habilidad del closer para llevar la conversación al punto de cierre." />
+          <KPICard small title="Close Rate" value={pct(closeRate, ctOffers > 0)} subtitle={`${ctCloses} / ${ctOffers} ofertas`} icon={Zap} color={ctOffers > 0 ? (closeRate >= 30 ? "#22c55e" : "#f59e0b") : undefined} tooltip="Tasa de cierre. De las ofertas presentadas, cuántas se convirtieron en venta. Es el indicador más directo de la efectividad del closer para convertir oportunidades en clientes." />
         </div>
       </div>
 
@@ -426,8 +431,8 @@ export default function Home() {
           <CreditCard className="h-3.5 w-3.5" /> KPIs Financieros
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <KPICard small title="Revenue Total" value={fmtFull(leadsRevenue)} icon={DollarSign} color="#F59E0B" tooltip="Ingreso total facturado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
-          <KPICard small title="Cash Collected" value={fmtFull(leadsCash)} icon={CreditCard} color="#22c55e" tooltip="Dinero efectivamente cobrado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
+          <KPICard small title="Revenue Total" value={leadsRevenue > 0 ? fmtFull(leadsRevenue) : "$0"} icon={DollarSign} color="#F59E0B" tooltip="Ingreso total facturado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
+          <KPICard small title="Cash Collected" value={leadsCash > 0 ? fmtFull(leadsCash) : "$0"} icon={CreditCard} color="#22c55e" tooltip="Dinero efectivamente cobrado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
           <KPICard small title="Ticket Promedio FE" value={ticketPromedioFE > 0 ? fmtFull(ticketPromedioFE) : "—"} subtitle={`${ctCloses} ventas`} icon={TrendingUp} tooltip="Valor promedio por venta (Front-End). Cuánto genera en promedio cada cliente nuevo. Ayuda a evaluar si el pricing y la oferta están alineados con los objetivos de revenue." />
           <KPICard small title="ROAS Up Front" value={roasUpFront > 0 ? `${roasUpFront.toFixed(2)}x` : "—"} subtitle={`Cash / Ad Spend`} icon={TrendingUp} color={roasUpFront >= 3 ? "#22c55e" : roasUpFront >= 1 ? "#f59e0b" : "#ef4444"} tooltip="Retorno sobre inversión publicitaria inmediato. Por cada dólar invertido en ads, cuántos dólares ya cobraste. Un ROAS >3x es excelente; <1x significa que aún no recuperas la inversión." />
           <KPICard small title="Contracted ROAs" value={contractedROAs > 0 ? `${contractedROAs.toFixed(2)}x` : "—"} subtitle="Revenue / Ad Spend" icon={TrendingUp} color={contractedROAs >= 5 ? "#22c55e" : contractedROAs >= 2 ? "#f59e0b" : "#ef4444"} tooltip="Retorno contratado sobre inversión. Incluye todo el revenue comprometido (no solo el cash cobrado). Muestra el valor total que generará la inversión publicitaria a medida que se cobren los contratos." />

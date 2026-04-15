@@ -13,6 +13,8 @@ export const ENV = {
   manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
   manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  /** Divisor to convert ad spend from account currency to USD. Set to ~950 for CLP accounts. */
+  adSpendDivisor: Number(process.env.AD_SPEND_DIVISOR) || 1,
   appUrl: process.env.APP_URL || process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : "http://localhost:3000",

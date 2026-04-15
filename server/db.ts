@@ -449,8 +449,11 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
   const totalClicks = Number(row.totalClicks);
   const totalImpressions = Number(row.totalImpressions);
 
+  // Convert from account currency (e.g. CLP) to USD using divisor
+  const divisor = ENV.adSpendDivisor;
+
   return {
-    adSpend: Number(row.totalSpend),
+    adSpend: Number(row.totalSpend) / divisor,
     totalLeadsRaw: Number(row.totalLeads),
     totalImpressions,
     totalClicks,
@@ -536,7 +539,7 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
     // Weekly: query actual daily ad data for the specific week's date range
     const weeklyData = await getWeeklyAdMetrics(targetMes, filters.semana, anio);
     if (weeklyData && Number(weeklyData.totalSpend) > 0) {
-      adSpend = Number(weeklyData.totalSpend);
+      adSpend = Number(weeklyData.totalSpend) / ENV.adSpendDivisor;
       totalLeadsRaw = Number(weeklyData.totalLeads);
       const impressions = Number(weeklyData.totalImpressions);
       ctr = impressions > 0 ? (Number(weeklyData.totalClicks) / impressions) * 100 : 0;
