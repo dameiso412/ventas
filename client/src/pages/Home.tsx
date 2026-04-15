@@ -152,25 +152,35 @@ export default function Home() {
   const visitasLanding = Number(mktKpis?.visitasLandingPage || 0);
   const ctrUnico = Number(mktKpis?.ctrUnico || 0);
 
-  // === SETTER TRACKER: Source of truth for Answer Rate & Triage Rate ===
+  // === DATA SOURCE DETECTION ===
+  const setterSource = trackerKpis?.source?.setter || "tracker";
+  const closerSource = trackerKpis?.source?.closer || "tracker";
+
+  // === SETTER: Tracker primary, Registro de Citas fallback ===
   const stIntentos = Number(trackerKpis?.setter?.totalIntentos || 0);
   const stIntros = Number(trackerKpis?.setter?.totalIntros || 0);
   const stConfirmadas = Number(trackerKpis?.setter?.totalConfirmadas || 0);
   const stAsistidas = Number(trackerKpis?.setter?.totalAsistidas || 0);
 
-  // === CLOSER TRACKER: Source of truth for Show/Offer/Close Rate ===
+  // === CLOSER: Tracker primary, Registro de Citas fallback ===
   const ctSchedule = Number(trackerKpis?.closer?.totalSchedule || 0);
   const ctLive = Number(trackerKpis?.closer?.totalLive || 0);
   const ctOffers = Number(trackerKpis?.closer?.totalOffers || 0);
   const ctDeposits = Number(trackerKpis?.closer?.totalDeposits || 0);
   const ctCloses = Number(trackerKpis?.closer?.totalCloses || 0);
 
-  // === FINANCIAL KPIs: Source of truth from LEADS (verified, tied to real leads with outcome=VENTA) ===
+  // === FINANCIAL KPIs: Prefer tracker revenue, fallback to leads ===
+  const trackerRevenue = Number(trackerKpis?.closer?.totalRevenue || 0);
+  const trackerCash = Number(trackerKpis?.closer?.totalCash || 0);
   const leadsRevenue = Number(mktKpis?.totalRevenue || 0);
   const leadsCash = Number(mktKpis?.totalCash || 0);
+  // Use whichever has data (tracker takes priority)
+  const bestRevenue = trackerRevenue > 0 ? trackerRevenue : leadsRevenue;
+  const bestCash = trackerCash > 0 ? trackerCash : leadsCash;
   const leadsVentas = Number(mktKpis?.ventas || 0);
+  const bestVentas = ctCloses > 0 ? ctCloses : leadsVentas;
 
-  // DQ % from Setter Tracker (Intros Efectivas - Demos Aseguradas) / Intros Efectivas
+  // DQ %
   const dqRate = Number(trackerKpis?.setter?.dqRate || 0);
   const dqCount = Number(trackerKpis?.setter?.dqCount || 0);
 
@@ -221,11 +231,11 @@ export default function Home() {
   const landingOptIn = visitasLanding > 0 && totalLeadsRaw > 0 ? ((totalLeadsRaw / visitasLanding) * 100) : 0;
   const bookingRate = totalLeadsRaw > 0 && totalAgendas > 0 ? ((totalAgendas / totalLeadsRaw) * 100) : 0;
 
-  // Financial KPIs — from Leads (source of truth, tied to verified sales)
-  const ticketPromedioFE = leadsVentas > 0 ? (leadsRevenue / leadsVentas) : 0;
-  const roasUpFront = adSpend > 0 ? (leadsCash / adSpend) : 0;
-  const cashPercentage = leadsRevenue > 0 ? ((leadsCash / leadsRevenue) * 100) : 0;
-  const contractedROAs = adSpend > 0 ? (leadsRevenue / adSpend) : 0;
+  // Financial KPIs — best available source
+  const ticketPromedioFE = bestVentas > 0 ? (bestRevenue / bestVentas) : 0;
+  const roasUpFront = adSpend > 0 ? (bestCash / adSpend) : 0;
+  const cashPercentage = bestRevenue > 0 ? ((bestCash / bestRevenue) * 100) : 0;
+  const contractedROAs = adSpend > 0 ? (bestRevenue / adSpend) : 0;
   const newMRR = newMRRFromLeads > 0 ? newMRRFromLeads : setupRevenue;
 
   // Funnel data
@@ -412,6 +422,11 @@ export default function Home() {
       <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <Percent className="h-3.5 w-3.5" /> Tasas de Conversión
+          {(setterSource === "leads" || closerSource === "leads") && (
+            <span className="text-[9px] font-normal text-amber-400/70 ml-2">
+              Fuente: Registro de Citas {closerSource === "leads" ? "(closer)" : ""}{setterSource === "leads" ? "(setter)" : ""}
+            </span>
+          )}
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3">
           <KPICard small title="Landing Opt-In" value={landingOptIn > 0 ? `${landingOptIn.toFixed(1)}%` : "—"} subtitle={`${totalLeadsRaw} / ${visitasLanding}`} icon={Globe} tooltip="Porcentaje de visitantes de la landing page que dejan sus datos. Mide qué tan persuasiva es la página y la VSL para generar interés." />
@@ -431,14 +446,14 @@ export default function Home() {
           <CreditCard className="h-3.5 w-3.5" /> KPIs Financieros
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <KPICard small title="Revenue Total" value={leadsRevenue > 0 ? fmtFull(leadsRevenue) : "$0"} icon={DollarSign} color="#F59E0B" tooltip="Ingreso total facturado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
-          <KPICard small title="Cash Collected" value={leadsCash > 0 ? fmtFull(leadsCash) : "$0"} icon={CreditCard} color="#22c55e" tooltip="Dinero efectivamente cobrado desde leads con venta cerrada. Fuente: Registro de Citas (verificable)." />
-          <KPICard small title="Ticket Promedio FE" value={ticketPromedioFE > 0 ? fmtFull(ticketPromedioFE) : "—"} subtitle={`${ctCloses} ventas`} icon={TrendingUp} tooltip="Valor promedio por venta (Front-End). Cuánto genera en promedio cada cliente nuevo. Ayuda a evaluar si el pricing y la oferta están alineados con los objetivos de revenue." />
+          <KPICard small title="Revenue Total" value={bestRevenue > 0 ? fmtFull(bestRevenue) : "$0"} icon={DollarSign} color="#F59E0B" tooltip="Ingreso total facturado desde leads con venta cerrada." />
+          <KPICard small title="Cash Collected" value={bestCash > 0 ? fmtFull(bestCash) : "$0"} icon={CreditCard} color="#22c55e" tooltip="Dinero efectivamente cobrado desde leads con venta cerrada." />
+          <KPICard small title="Ticket Promedio FE" value={ticketPromedioFE > 0 ? fmtFull(ticketPromedioFE) : "—"} subtitle={`${bestVentas} ventas`} icon={TrendingUp} tooltip="Valor promedio por venta (Front-End). Cuánto genera en promedio cada cliente nuevo. Ayuda a evaluar si el pricing y la oferta están alineados con los objetivos de revenue." />
           <KPICard small title="ROAS Up Front" value={roasUpFront > 0 ? `${roasUpFront.toFixed(2)}x` : "—"} subtitle={`Cash / Ad Spend`} icon={TrendingUp} color={roasUpFront >= 3 ? "#22c55e" : roasUpFront >= 1 ? "#f59e0b" : "#ef4444"} tooltip="Retorno sobre inversión publicitaria inmediato. Por cada dólar invertido en ads, cuántos dólares ya cobraste. Un ROAS >3x es excelente; <1x significa que aún no recuperas la inversión." />
           <KPICard small title="Contracted ROAs" value={contractedROAs > 0 ? `${contractedROAs.toFixed(2)}x` : "—"} subtitle="Revenue / Ad Spend" icon={TrendingUp} color={contractedROAs >= 5 ? "#22c55e" : contractedROAs >= 2 ? "#f59e0b" : "#ef4444"} tooltip="Retorno contratado sobre inversión. Incluye todo el revenue comprometido (no solo el cash cobrado). Muestra el valor total que generará la inversión publicitaria a medida que se cobren los contratos." />
           <KPICard small title="Cash %" value={cashPercentage > 0 ? `${cashPercentage.toFixed(1)}%` : "—"} subtitle="Cash / Revenue" icon={Percent} tooltip="Porcentaje de cobro inmediato. Qué proporción del revenue contratado ya se cobró. Ideal >80%. Un Cash% bajo indica mucho revenue pendiente de cobro o planes de pago extendidos." />
           <KPICard small title="New MRR" value={newMRR > 0 ? fmtFull(newMRR) : "—"} subtitle={ventasSetupMonthly > 0 ? `${ventasSetupMonthly} Setup+Monthly` : "Retención mensual"} icon={CreditCard} color="#8B5CF6" tooltip="Nuevo ingreso recurrente mensual. La suma de las recurrencias mensuales de clientes con producto Setup+Monthly. Representa el ingreso predecible que se generará cada mes." />
-          <KPICard small title="Ventas" value={ctCloses} subtitle={ventasPIF + ventasSetupMonthly > 0 ? `${ventasPIF} PIF · ${ventasSetupMonthly} S+M` : `${seguimientos} seguimientos`} icon={Zap} color="#22c55e" tooltip="Total de ventas cerradas en el período. Desglosado por tipo de producto: PIF (pago único) y S+M (Setup + Mensualidad). Es el resultado final de todo el proceso comercial." />
+          <KPICard small title="Ventas" value={bestVentas} subtitle={ventasPIF + ventasSetupMonthly > 0 ? `${ventasPIF} PIF · ${ventasSetupMonthly} S+M` : `${seguimientos} seguimientos`} icon={Zap} color="#22c55e" tooltip="Total de ventas cerradas en el período. Desglosado por tipo de producto: PIF (pago único) y S+M (Setup + Mensualidad). Es el resultado final de todo el proceso comercial." />
         </div>
       </div>
 

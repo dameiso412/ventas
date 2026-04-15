@@ -486,11 +486,55 @@ export const appRouter = router({
         semana: z.number().optional(),
       }).optional())
       .query(async ({ input }) => {
-        const [setter, closer] = await Promise.all([
+        const [setter, closer, dashKpis] = await Promise.all([
           db.getSetterTrackerKPIs(input ?? undefined),
           db.getCloserTrackerKPIs(input ?? undefined),
+          db.getDashboardKPIs(input ?? undefined),
         ]);
-        return { setter, closer };
+
+        // Determine if trackers have meaningful data for this period
+        const hasSetterData = Number(setter.totalIntentos) > 0 || Number(setter.totalIntros) > 0;
+        const hasCloserData = Number(closer.totalSchedule) > 0 || Number(closer.totalLive) > 0 || Number(closer.totalCloses) > 0;
+
+        // Build setter result: tracker primary, leads fallback
+        const setterResult = hasSetterData ? setter : {
+          ...setter,
+          // Fallback: leads totalLeads ≈ agendas to attempt, contestados ≈ intros
+          totalIntentos: Number(dashKpis?.totalLeads || 0),
+          totalIntros: Number(dashKpis?.contestados || 0),
+          totalConfirmadas: Number(dashKpis?.demosConfirmadas || 0),
+          totalAsistidas: Number(dashKpis?.demosAsistidas || 0),
+          totalCierres: Number(dashKpis?.ventas || 0),
+          totalRevenue: Number(dashKpis?.totalRevenue || 0),
+          totalCash: Number(dashKpis?.totalCash || 0),
+          dqCount: Math.max(0, Number(dashKpis?.contestados || 0) - Number(dashKpis?.demosConfirmadas || 0)),
+          dqRate: Number(dashKpis?.contestados || 0) > 0
+            ? Math.max(0, (Number(dashKpis?.contestados || 0) - Number(dashKpis?.demosConfirmadas || 0)) / Number(dashKpis?.contestados || 0) * 100)
+            : 0,
+        };
+
+        // Build closer result: tracker primary, leads fallback
+        const closerResult = hasCloserData ? closer : {
+          ...closer,
+          // Fallback: confirmadas ≈ schedule, asistidas ≈ live, ofertasHechas ≈ offers, ventas ≈ closes
+          totalSchedule: Number(dashKpis?.demosConfirmadas || 0),
+          totalLive: Number(dashKpis?.demosAsistidas || 0),
+          totalOffers: Number(dashKpis?.ofertasHechas || 0),
+          totalCloses: Number(dashKpis?.ventas || 0),
+          totalDeposits: 0,
+          totalRevenue: Number(dashKpis?.totalRevenue || 0),
+          totalCash: Number(dashKpis?.totalCash || 0),
+          noShow: Number(dashKpis?.noShow || 0),
+        };
+
+        return {
+          setter: setterResult,
+          closer: closerResult,
+          source: {
+            setter: hasSetterData ? "tracker" as const : "leads" as const,
+            closer: hasCloserData ? "tracker" as const : "leads" as const,
+          },
+        };
       }),
 
     validation: publicProcedure
