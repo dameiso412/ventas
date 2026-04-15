@@ -15,6 +15,7 @@ import { startCronSync } from "../cron-meta-sync";
 import { startKpiMonitor } from "../cron-kpi-monitor";
 import { getDb, resetDb } from "../db";
 import { sendSlackAlert, isSlackConfigured } from "./slack";
+import { initExchangeRate } from "./exchange-rate";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -123,6 +124,8 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`[SacaMedi CRM] Server running on http://localhost:${port}/`);
     console.log(`[SacaMedi CRM] Build: 2026-04-12-v2`);
+    // Pre-warm exchange rate cache
+    initExchangeRate();
     // Start the Meta Ads cron sync scheduler
     startCronSync();
     // Start KPI pulse monitor (Slack alerts + reports)

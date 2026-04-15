@@ -29,6 +29,7 @@ import {
   manychatEvents, InsertManychatEvent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { getAdSpendDivisor } from './_core/exchange-rate';
 import { calculateBusinessHours } from '../shared/businessHours';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -449,8 +450,8 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
   const totalClicks = Number(row.totalClicks);
   const totalImpressions = Number(row.totalImpressions);
 
-  // Convert from account currency (e.g. CLP) to USD using divisor
-  const divisor = ENV.adSpendDivisor;
+  // Convert from account currency (e.g. CLP) to USD using real-time rate
+  const divisor = await getAdSpendDivisor();
 
   return {
     adSpend: Number(row.totalSpend) / divisor,
@@ -539,7 +540,8 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
     // Weekly: query actual daily ad data for the specific week's date range
     const weeklyData = await getWeeklyAdMetrics(targetMes, filters.semana, anio);
     if (weeklyData && Number(weeklyData.totalSpend) > 0) {
-      adSpend = Number(weeklyData.totalSpend) / ENV.adSpendDivisor;
+      const weeklyDivisor = await getAdSpendDivisor();
+      adSpend = Number(weeklyData.totalSpend) / weeklyDivisor;
       totalLeadsRaw = Number(weeklyData.totalLeads);
       const impressions = Number(weeklyData.totalImpressions);
       ctr = impressions > 0 ? (Number(weeklyData.totalClicks) / impressions) * 100 : 0;

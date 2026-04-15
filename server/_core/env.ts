@@ -13,7 +13,9 @@ export const ENV = {
   manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
   manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-  /** Divisor to convert ad spend from account currency to USD. Set to ~950 for CLP accounts. */
+  /** Currency of the Meta Ads account. Set to "CLP" to auto-convert to USD. Default: "USD" (no conversion). */
+  adCurrency: (process.env.AD_CURRENCY || "USD").toUpperCase(),
+  /** Manual fallback divisor if exchange rate API is unreachable. */
   adSpendDivisor: Number(process.env.AD_SPEND_DIVISOR) || 1,
   appUrl: process.env.APP_URL || process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
