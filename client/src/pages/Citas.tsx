@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
 import { ProspectProfile } from "@/components/ProspectProfile";
 import { PipelineBoard } from "@/components/PipelineBoard";
+import { CallRecordingTriage } from "@/components/CallRecordingTriage";
 import { ScoreBadge, OutcomeBadge, ContactoBadge, EstadoLeadBadge } from "@/components/LeadBadges";
 import { calculateBusinessHours } from "@shared/businessHours";
 
@@ -1149,6 +1150,11 @@ function EditLeadForm({ lead, onSave, isPending, onNoShow }: { lead: any; onSave
             </div>
           </div>
         )}
+
+        {/* Call Recording Upload + AI Analysis */}
+        <div className="mt-3">
+          <CallRecordingTriage leadId={lead.id} closer={form.closer} />
+        </div>
 
         {/* Universal Prospect Profile */}
         <div className="mt-3">

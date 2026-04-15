@@ -959,7 +959,11 @@ export const appRouter = router({
         const audit = await db.getCallAuditById(input.id);
         if (!audit) throw new Error("Auditoria no encontrada");
         if (!audit.recordingTranscript) throw new Error("No hay transcripcion disponible para reanalizar");
-        await reanalyzeTranscript(audit.id, audit.recordingTranscript);
+        await reanalyzeTranscript(audit.id, audit.recordingTranscript, {
+          leadId: audit.leadId || undefined,
+          leadName: (audit as any).leadName || undefined,
+          closer: audit.closer || undefined,
+        });
         return { success: true };
       }),
   }),

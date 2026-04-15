@@ -96,7 +96,8 @@ uploadRouter.post(
 
       // Fire-and-forget: transcribe + analyze in background
       transcribeAndAnalyze(audit.id, file.buffer, file.mimetype, {
-        leadName: lead?.nombre || undefined,
+        leadId: leadId || undefined,
+        leadName: lead?.nombre || leadName || undefined,
         closer: closer || undefined,
       }).catch((err) => {
         console.error(`[Upload] Background transcription failed for audit #${audit.id}:`, err);
