@@ -68,8 +68,18 @@ async function startServer() {
   });
   // Slack test endpoint
   app.get("/api/test-slack", async (_req, res) => {
+    const raw = process.env.SLACK_WEBHOOK_URL;
     if (!isSlackConfigured()) {
-      res.json({ success: false, error: "SLACK_WEBHOOK_URL no configurada en variables de entorno" });
+      res.json({
+        success: false,
+        error: "SLACK_WEBHOOK_URL no configurada",
+        debug: {
+          varExists: raw !== undefined,
+          varLength: raw?.length ?? 0,
+          startsWithHttps: raw?.startsWith("https://") ?? false,
+          allEnvKeys: Object.keys(process.env).filter(k => k.toLowerCase().includes("slack")).sort(),
+        },
+      });
       return;
     }
     try {
