@@ -680,12 +680,12 @@ function AuditDetailView({ id }: { id: number }) {
         </CardContent>
       </Card>
 
-      {/* Why Not Closed */}
+      {/* Etapas / Why Not Closed */}
       {(audit.aiWhyNotClosed as string) && (
         <Card className="border-border/40 border-l-4 border-l-amber-500/50">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <ThumbsDown className="h-5 w-5 text-amber-400" /> Por qué no cerró
+              <ThumbsDown className="h-5 w-5 text-amber-400" /> Evaluación por Etapas
             </CardTitle>
           </CardHeader>
           <CardContent>

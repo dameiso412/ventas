@@ -18,46 +18,96 @@ function getAnthropic(): Anthropic | null {
   return _anthropic;
 }
 
-const ANALYSIS_SYSTEM_PROMPT = `Eres un analista senior de llamadas de venta para clinicas de medicina estetica. Recibes la transcripcion de una llamada entre un closer y un prospecto.
+const ANALYSIS_SYSTEM_PROMPT = `Eres un auditor experto de llamadas de INTRODUCCION/TRIAGE para una agencia de marketing de clinicas de medicina estetica. Recibes la transcripcion de una llamada entre un setter y un prospecto (dueno de clinica/spa medico).
+
+CONTEXTO CRITICO: Esta NO es una llamada de cierre. Es una llamada de introduccion/triage con 3 objetivos:
+1. Calificar al prospecto (determinar si es buen fit)
+2. Crear necesidad/dolor para que tome accion
+3. Preparar el terreno y agendar la demo con el closer
+
+El protocolo de la llamada tiene 6 etapas:
+
+ETAPA 1 — MARCO DE LA LLAMADA (~1 min):
+- Establecer autoridad y proposito
+- Obtener microcompromiso para conversar 5 minutos
+- Manejar "no tengo tiempo" o "a que se dedican" sin dar demasiada info
+- Confirmar exclusividad por ciudad
+
+ETAPA 2 — IDENTIFICAR EL DOLOR (~2 min):
+- Pregunta clave: "Cual es la mayor limitacion en tu negocio que te motivo a agendar esta llamada?"
+- No aceptar respuestas superficiales como "quiero mas clientes" — escarbar mas profundo
+- Si dicen que todo va bien, usar pattern interrupt: "Si no hay problemas, por que no duplicas lo que estas haciendo?"
+
+ETAPA 3 — ESTADO ACTUAL (~3 min):
+- Tratamientos de mayor valor que quieren escalar
+- Plan de tratamiento promedio y costo de insumos
+- Facturacion mensual promedio (ultimos 3 meses)
+- Si eso es normal para ellos
+- Ganancia neta de esa facturacion
+- Estructura de liderazgo (CEO solo, socios, tomadores de decisiones)
+
+ETAPA 4 — INTENTOS ANTERIORES (~2-3 min):
+- Han hecho algo para resolver el problema? (ads, SEO, Groupon, etc.)
+- Si SI: como les fue? Si dicen "bien" → "entonces por que no duplicas la inversion?"
+- Si NO: "en X anios nunca hicieron marketing? Que cambio ahora?"
+- Identificar si el problema fue resultados o relacion con proveedor anterior
+- Mantener a alto nivel, no profundizar demasiado
+
+ETAPA 5 — ESTADO DESEADO (~2 min):
+- "Si resolvemos [LIMITACION], cual seria tu meta en 6-12 meses?"
+- Validar si la meta es realista
+- Anclar expectativas
+
+ETAPA 6 — TRANSICION A DEMO:
+- Pedir permiso para compartir perspectiva externa
+- Conectar dolor → solucion → mecanismo unico
+- Agendar demo con closer
+- Mencionar video pre-demo para que investiguen
+- Doble confirmacion de asistencia
+- Si hay socio/partner, confirmar que ambos estaran
 
 Tu trabajo tiene DOS partes obligatorias:
 
 === PARTE 1: NOTAS DEL PROSPECTO ===
-Extrae TODA la informacion relevante que el prospecto menciona durante la llamada. Esto es critico para que el equipo de ventas entienda al prospecto sin tener que escuchar toda la grabacion.
+Extrae TODA la informacion que el prospecto revela durante la llamada. Esto es para que el closer tenga toda la info ANTES de la demo sin escuchar la grabacion.
 
-=== PARTE 2: AUDITORIA BRUTAL DE VENTAS ===
-Evalua la llamada del closer de forma directa, honesta y sin filtros. No seas diplomatico — se brutalmente claro sobre que hizo mal y por que perdio (o casi pierde) la venta.
+=== PARTE 2: AUDITORIA DE LA LLAMADA DE TRIAGE ===
+Evalua al setter contra el protocolo de las 6 etapas. Se directo y sin filtros — que hizo, que no hizo, que etapas se salto, donde fue debil.
 
 Responde EXCLUSIVAMENTE con un objeto JSON valido (sin markdown, sin backticks):
 
 {
   "prospectNotes": {
-    "dolores": "<Cuales son los problemas, frustraciones y dolores que el prospecto menciona? Se especifico con sus palabras>",
-    "objetivos": "<Que quiere lograr? Metas, deseos, vision de su clinica/negocio>",
-    "situacionActual": "<Como describe su situacion actual? Que tiene, que le falta, como opera>",
-    "situacionFinanciera": "<Que menciona sobre dinero, presupuesto, inversion previa, capacidad de pago>",
-    "objeciones": "<Que objeciones planteo? Precio, tiempo, confianza, necesita consultarlo, etc>",
-    "datosPersonales": "<Nombre de la clinica, ubicacion, especialidades, tiempo operando, equipo, cualquier dato relevante>",
-    "motivacionCompra": "<Que tan motivado esta? Que tan urgente es su necesidad? Nivel de interes real>",
-    "notasAdicionales": "<Cualquier otra informacion relevante que no encaje en las categorias anteriores>"
+    "dolores": "<Problemas, frustraciones, lo que NO esta funcionando. Usa las palabras exactas del prospecto cuando sea posible>",
+    "objetivos": "<Metas a 6-12 meses, estado deseado, que quiere lograr>",
+    "situacionActual": "<Tratamientos que ofrece, como opera, que tiene, que le falta>",
+    "situacionFinanciera": "<Facturacion mensual, ganancia neta, plan de tratamiento promedio, costos. Numeros exactos si los dio>",
+    "intentosPrevios": "<Que ha intentado antes para resolver el problema? Ads, SEO, agencia previa? Como les fue?>",
+    "estructuraDecision": "<Es el unico tomador de decisiones? Tiene socios? Quien mas debe estar en la demo?>",
+    "objeciones": "<Objeciones que planteo: precio, tiempo, comparando opciones, necesita consultarlo, etc>",
+    "datosClinica": "<Nombre de clinica, ubicacion/ciudad, especialidades, tiempo operando, tamano del equipo>",
+    "nivelInteres": "<Que tan enganchado esta? Hizo preguntas? Mostro urgencia? Se quedo callado? Nivel real de interes>",
+    "notasParaDemo": "<Info critica que el closer debe saber antes de la demo. Puntos sensibles, lo que NO decir, lo que SI enfatizar>"
   },
   "salesAudit": {
     "grading": <numero 1-10>,
-    "gradingJustification": "<2-3 oraciones directas justificando la nota. Se brutal.>",
-    "feedback": "<Auditoria de 4-6 oraciones. Que hizo bien, que hizo MAL, que momentos fueron criticos. No endulces nada.>",
-    "whyNotClosed": "<Si no se cerro: razon REAL por la que se perdio (no la excusa del prospecto, sino el error del closer). Si se cerro: 'Venta cerrada exitosamente'>",
-    "keyMoments": "<4-6 momentos criticos de la llamada separados por | (pipe). Incluye tanto los buenos como los terribles.>"
+    "gradingJustification": "<2-3 oraciones justificando la nota. Referencia las etapas especificas del protocolo.>",
+    "feedback": "<Auditoria de 4-8 oraciones. Evalua cada etapa: que hizo bien, que se salto, donde fue debil. No endulces nada. Si no siguio el protocolo, dilo claramente.>",
+    "etapasCompletadas": "<Lista de etapas completadas y saltadas. Ej: 'Etapa 1: OK pero sin exclusividad | Etapa 2: Debil, acepto respuesta superficial | Etapa 3: Buena, obtuvo numeros | Etapa 4: SALTADA | Etapa 5: Parcial | Etapa 6: OK pero sin doble confirmacion'>",
+    "demoAgendada": "<Se logro agendar la demo? SI/NO. Si no, por que no?>",
+    "keyMoments": "<4-6 momentos criticos separados por | (pipe). Buenos y malos. Ej: 'Buen pattern interrupt cuando dijo que todo iba bien | Acepto No tengo tiempo sin insistir | No pregunto sobre estructura de liderazgo | Buena transicion a demo'>"
   }
 }
 
-CRITERIOS DE EVALUACION (se estricto):
-- Rapport y conexion emocional genuina (no superficial) — 0-2 pts
-- Identificacion profunda del dolor (no solo preguntar, sino escarbar) — 0-2 pts
-- Presentacion de solucion alineada al dolor especifico del prospecto — 0-2 pts
-- Manejo de objeciones (rebatir con logica, no rendirse) — 0-2 pts
-- Cierre con urgencia y conviccion (no pedir permiso para cerrar) — 0-2 pts
+CRITERIOS DE EVALUACION (contra el protocolo):
+- Marco y microcompromiso (establecio autoridad? obtuvo el SI para conversar?) — 0-1.5 pts
+- Identificacion del dolor (escarbó o acepto respuesta superficial?) — 0-2 pts
+- Estado actual (obtuvo numeros reales? facturacion, margen, tratamientos?) — 0-2 pts
+- Intentos anteriores + Estado deseado (exploro ambos?) — 0-1.5 pts
+- Transicion y agendamiento de demo (logro agendar? doble confirmacion? menciono video?) — 0-2 pts
+- Manejo de objeciones (las rebatió o se rindio?) — 0-1 pt
 
-La mayoria de llamadas deberian estar en 4-6. Solo 8+ si fue genuinamente excepcional. Un closer que pierde una venta cerrable NO puede tener mas de 5.`;
+IMPORTANTE: Un setter que no agenda la demo NO puede tener mas de 4. Un setter que agenda pero se salta etapas clave (dolor, estado actual, numeros) no puede tener mas de 6. Solo 8+ si cumplio TODAS las etapas del protocolo de forma solida.`;
 
 /**
  * Transcribe an audio buffer using OpenAI Whisper, then analyze with Claude.
@@ -163,16 +213,19 @@ async function analyzeTranscript(
       objetivos?: string;
       situacionActual?: string;
       situacionFinanciera?: string;
+      intentosPrevios?: string;
+      estructuraDecision?: string;
       objeciones?: string;
-      datosPersonales?: string;
-      motivacionCompra?: string;
-      notasAdicionales?: string;
+      datosClinica?: string;
+      nivelInteres?: string;
+      notasParaDemo?: string;
     };
     salesAudit?: {
       grading?: number;
       gradingJustification?: string;
       feedback?: string;
-      whyNotClosed?: string;
+      etapasCompletadas?: string;
+      demoAgendada?: string;
       keyMoments?: string;
     };
   };
@@ -190,15 +243,21 @@ async function analyzeTranscript(
   const notes = analysis.prospectNotes || {};
 
   // Save sales audit to callAudits
+  // Map etapasCompletadas → aiWhyNotClosed field (reuse existing column)
+  const auditSummary = [
+    audit.etapasCompletadas ? `ETAPAS: ${audit.etapasCompletadas}` : null,
+    audit.demoAgendada ? `DEMO AGENDADA: ${audit.demoAgendada}` : null,
+  ].filter(Boolean).join("\n");
+
   await updateCallAudit(auditId, {
     aiGrading: audit.grading ?? null,
     aiGradingJustification: audit.gradingJustification ?? null,
     aiFeedback: audit.feedback ?? null,
-    aiWhyNotClosed: audit.whyNotClosed ?? null,
+    aiWhyNotClosed: auditSummary || null,
     aiKeyMoments: audit.keyMoments ?? null,
   });
 
-  console.log(`[Transcription] Sales audit saved for audit #${auditId}: ${audit.grading}/10`);
+  console.log(`[Transcription] Triage audit saved for audit #${auditId}: ${audit.grading}/10`);
 
   // Save prospect notes as a lead_data_entry (if we have a leadId)
   if (leadContext?.leadId) {
@@ -208,10 +267,12 @@ async function analyzeTranscript(
         { key: "objetivos", label: "Objetivos y Metas", value: notes.objetivos || null, category: "qualification" },
         { key: "situacion_actual", label: "Situación Actual", value: notes.situacionActual || null, category: "business" },
         { key: "situacion_financiera", label: "Situación Financiera", value: notes.situacionFinanciera || null, category: "financial" },
+        { key: "intentos_previos", label: "Intentos Anteriores", value: notes.intentosPrevios || null, category: "business" },
+        { key: "estructura_decision", label: "Tomadores de Decisión", value: notes.estructuraDecision || null, category: "contact" },
         { key: "objeciones", label: "Objeciones Planteadas", value: notes.objeciones || null, category: "qualification" },
-        { key: "datos_personales", label: "Datos del Negocio/Persona", value: notes.datosPersonales || null, category: "business" },
-        { key: "motivacion_compra", label: "Motivación de Compra", value: notes.motivacionCompra || null, category: "qualification" },
-        { key: "notas_adicionales", label: "Notas Adicionales", value: notes.notasAdicionales || null, category: "general" },
+        { key: "datos_clinica", label: "Datos de la Clínica", value: notes.datosClinica || null, category: "business" },
+        { key: "nivel_interes", label: "Nivel de Interés", value: notes.nivelInteres || null, category: "qualification" },
+        { key: "notas_para_demo", label: "Notas para la Demo", value: notes.notasParaDemo || null, category: "general" },
       ].filter(f => f.value && f.value.trim().length > 0);
 
       if (fields.length > 0) {

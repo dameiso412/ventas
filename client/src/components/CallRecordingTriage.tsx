@@ -58,7 +58,7 @@ function AuditResultCard({ audit }: { audit: any }) {
         {audit.aiGrading !== null && <GradingCircle grade={audit.aiGrading} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold">Auditoría de Ventas</span>
+            <span className="text-xs font-semibold">Auditoría de Triage</span>
             {audit.aiGrading !== null && (
               <span className="text-[10px]">— <GradingLabel grade={audit.aiGrading} /></span>
             )}
@@ -94,14 +94,14 @@ function AuditResultCard({ audit }: { audit: any }) {
             </div>
           )}
 
-          {/* Why not closed */}
-          {audit.aiWhyNotClosed && audit.aiWhyNotClosed !== "Venta cerrada exitosamente" && (
+          {/* Etapas y demo */}
+          {audit.aiWhyNotClosed && (
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <ThumbsDown className="h-3 w-3 text-red-400" />
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase">Por qué no cerró</span>
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase">Evaluación por Etapas</span>
               </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">{audit.aiWhyNotClosed}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-line">{audit.aiWhyNotClosed}</p>
             </div>
           )}
 
