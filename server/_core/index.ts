@@ -14,6 +14,7 @@ import { uploadRouter } from "../upload";
 import { startCronSync } from "../cron-meta-sync";
 import { startKpiMonitor } from "../cron-kpi-monitor";
 import { getDb, resetDb } from "../db";
+import { sendSlackAlert, isSlackConfigured } from "./slack";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -63,6 +64,28 @@ async function startServer() {
       }
     } catch (err: any) {
       res.status(503).json({ status: "error", db: "failed", error: err.message, env: !!process.env.DATABASE_URL });
+    }
+  });
+  // Slack test endpoint
+  app.get("/api/test-slack", async (_req, res) => {
+    if (!isSlackConfigured()) {
+      res.json({ success: false, error: "SLACK_WEBHOOK_URL no configurada en variables de entorno" });
+      return;
+    }
+    try {
+      const sent = await sendSlackAlert({
+        severity: "success",
+        title: "Test de Conexion Exitoso",
+        body: "El CRM de SacaMedi esta conectado correctamente a Slack. Las alertas automaticas estan activas.",
+        fields: [
+          { label: "Pulse Checks", value: "Cada 15 min" },
+          { label: "Resumen Horario", value: "Si hay actividad" },
+          { label: "Reporte Diario", value: "8 AM Chile" },
+        ],
+      });
+      res.json({ success: sent, slackConfigured: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
   // tRPC API
