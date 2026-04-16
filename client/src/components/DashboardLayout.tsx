@@ -13,65 +13,16 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import {
-  LayoutDashboard,
-  CalendarCheck,
-  PhoneCall,
-  Target,
-  Star,
-  Trophy,
-  Webhook,
-  PanelLeft,
-  Activity,
-  Code,
-  TrendingUp,
-  Bell,
-  UserCircle,
-  BarChart3,
-  Headphones,
-  Crosshair,
-  Sun,
-  Moon,
-  Flame,
-  ListTodo,
-  ClipboardCheck,
-  Users,
-  Shield,
-  LogOut,
-  Calculator,
-} from "lucide-react";
+import { PanelLeft, Sun, Moon, LogOut } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { hasAccess, ROLE_LABELS, type CrmRole } from "@shared/permissions";
+import { ROLE_LABELS, type CrmRole } from "@shared/permissions";
+import { getVisibleSections } from "@/config/navigation";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { NotificationBell } from "./NotificationBell";
 import { AIChatWidget } from "./AIChatWidget";
-
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: ListTodo, label: "Cola de Trabajo", path: "/cola-trabajo" },
-  { icon: ClipboardCheck, label: "Confirmaciones", path: "/confirmaciones" },
-  { icon: CalendarCheck, label: "Registro de Citas", path: "/citas" },
-  { icon: PhoneCall, label: "Setter Tracker", path: "/setter-tracker" },
-  { icon: Target, label: "Closer Tracker", path: "/closer-tracker" },
-  { icon: Star, label: "Score de Leads", path: "/scoring" },
-  { icon: Trophy, label: "Leaderboards", path: "/leaderboards" },
-  { icon: BarChart3, label: "Team Summary", path: "/team-summary" },
-  { icon: UserCircle, label: "Perfil de Rep", path: "/rep-profile" },
-  { icon: TrendingUp, label: "Proyecciones", path: "/proyecciones" },
-  { icon: Bell, label: "Alertas", path: "/alertas" },
-  { icon: Flame, label: "Follow-Ups", path: "/follow-ups" },
-  { icon: Headphones, label: "Auditoría Llamadas", path: "/auditoria" },
-  { icon: Activity, label: "Diagnóstico", path: "/diagnostico" },
-  { icon: Crosshair, label: "Atribución Ads", path: "/atribucion" },
-  { icon: Users, label: "Equipo", path: "/equipo" },
-  { icon: Calculator, label: "Calculadora Revenue", path: "/calculadora" },
-  { icon: Shield, label: "Accesos", path: "/accesos" },
-  { icon: Webhook, label: "Webhook Info", path: "/webhook" },
-  { icon: Code, label: "API REST", path: "/api" },
-];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -125,15 +76,16 @@ function DashboardLayoutContent({
   const { theme, toggleTheme } = useTheme();
   const { user, loading, logout } = useAuth();
 
-  // Filter menu items based on user role
-  const filteredMenuItems = useMemo(() => {
+  // Filter nav sections based on user role — user sees a section only if they
+  // have access to at least one of its sub-tabs.
+  const visibleSections = useMemo(() => {
     if (!user) return [];
-    const role = user.role;
-    return menuItems.filter(item => hasAccess(role, item.path));
+    return getVisibleSections(user.role);
   }, [user]);
 
-  const activeMenuItem = filteredMenuItems.find(item => item.path === location) 
-    || menuItems.find(item => item.path === location);
+  const activeSection = visibleSections.find((section) =>
+    location === section.basePath || location.startsWith(section.basePath + "/")
+  );
 
   // Get user initials for avatar
   const userInitials = useMemo(() => {
@@ -201,19 +153,20 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {filteredMenuItems.map(item => {
-                const isActive = location === item.path || 
-                  (item.path !== "/" && location.startsWith(item.path + "/"));
+              {visibleSections.map((section) => {
+                const isActive =
+                  location === section.basePath ||
+                  location.startsWith(section.basePath + "/");
                 return (
-                  <SidebarMenuItem key={item.path}>
+                  <SidebarMenuItem key={section.basePath}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
+                      onClick={() => setLocation(section.defaultPath)}
+                      tooltip={section.label}
                       className={`h-10 transition-all font-normal`}
                     >
-                      <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                      <span>{item.label}</span>
+                      <section.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                      <span>{section.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -303,7 +256,7 @@ function DashboardLayoutContent({
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
                 <span className="tracking-tight text-foreground font-semibold">
-                  {activeMenuItem?.label ?? "Sacamedi CRM"}
+                  {activeSection?.label ?? "Sacamedi CRM"}
                 </span>
               </div>
             </div>
