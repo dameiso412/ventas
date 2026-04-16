@@ -27,6 +27,7 @@ import {
   revenueScenarios, InsertRevenueScenario,
   leadDataEntries, InsertLeadDataEntry,
   manychatEvents, InsertManychatEvent,
+  systemConfig,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAdSpendDivisor } from './_core/exchange-rate';
@@ -3525,4 +3526,603 @@ export async function getSetterIgPerformance(filters?: { mes?: string; semana?: 
     igAgendasEnviadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasEnviadas}), 0)`,
     igAgendasReservadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0)`,
   }).from(setterActivities).where(where).groupBy(setterActivities.setter).orderBy(sql`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0) DESC`);
+}
+
+// ==================== SYSTEM CONFIG ====================
+/**
+ * Get a single config value by key. Returns null if the key doesn't exist.
+ * All values are stored as text; caller is responsible for parsing numbers/JSON.
+ */
+export async function getSystemConfig(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(systemConfig).where(eq(systemConfig.key, key)).limit(1);
+  return rows[0]?.value ?? null;
+}
+
+/**
+ * Get many keys at once. Returns a plain object of {key: value}. Missing keys
+ * are simply absent from the result.
+ */
+export async function getSystemConfigMany(keys: string[]): Promise<Record<string, string | null>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (keys.length === 0) return {};
+  const rows = await db.select().from(systemConfig).where(inArray(systemConfig.key, keys));
+  const result: Record<string, string | null> = {};
+  for (const row of rows) result[row.key] = row.value;
+  return result;
+}
+
+/**
+ * Set a config value. Creates the row if it doesn't exist, otherwise updates
+ * the existing one. Returns the stored value.
+ */
+export async function setSystemConfig(data: {
+  key: string;
+  value: string | null;
+  description?: string;
+  updatedBy?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(systemConfig)
+    .values({
+      key: data.key,
+      value: data.value,
+      description: data.description,
+      updatedBy: data.updatedBy,
+    })
+    .onConflictDoUpdate({
+      target: systemConfig.key,
+      set: {
+        value: data.value,
+        description: data.description,
+        updatedBy: data.updatedBy,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+/**
+ * Resolve the platform-wide default ticket value. Used by Dashboard > Pipeline
+ * when a lead's `contractedRevenue` / `ticket` is null. Falls back to 3150 USD
+ * if the row is missing.
+ */
+export async function getDefaultTicketValue(): Promise<number> {
+  const raw = await getSystemConfig("defaultTicketValue");
+  if (!raw) return 3150;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 3150;
+}
+
+// ==================== DASHBOARD > CITAS (Appointments report) ====================
+/**
+ * Breakdown of appointments by confirmation state, attendance, and period.
+ * Consumed by `/dashboard/citas`.
+ */
+export async function getCitasReport(filters?: { mes?: string; semana?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = [];
+  if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
+  // A "cita" in the business sense = lead with a scheduled appointment. We keep
+  // all leads here (even without fecha) because estadoConfirmacion / asistencia
+  // still make sense as aggregate metrics.
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [totals] = await db.select({
+    total: sql<number>`COUNT(*)`,
+    pendienteConfirmacion: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'PENDIENTE' THEN 1 ELSE 0 END)`,
+    confirmadas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'CONFIRMADA' THEN 1 ELSE 0 END)`,
+    noConfirmadas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'NO CONFIRMADA' THEN 1 ELSE 0 END)`,
+    canceladas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'CANCELADA' THEN 1 ELSE 0 END)`,
+    reagendadas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'REAGENDADA' THEN 1 ELSE 0 END)`,
+    asistidas: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'ASISTIÓ' THEN 1 ELSE 0 END)`,
+    noShow: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'NO SHOW' THEN 1 ELSE 0 END)`,
+    pendienteAsistencia: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'PENDIENTE' THEN 1 ELSE 0 END)`,
+    invalidas: sql<number>`SUM(CASE WHEN ${leads.validoParaContacto} = 'NO' THEN 1 ELSE 0 END)`,
+    nuevasHoy: sql<number>`SUM(CASE WHEN DATE(${leads.createdAt} AT TIME ZONE 'America/Santiago') = DATE(NOW() AT TIME ZONE 'America/Santiago') THEN 1 ELSE 0 END)`,
+    withFecha: sql<number>`SUM(CASE WHEN ${leads.fecha} IS NOT NULL THEN 1 ELSE 0 END)`,
+  }).from(leads).where(where);
+
+  // Daily breakdown for the chart — group by date of fecha in Chile TZ.
+  const timeline = await db.select({
+    date: sql<string>`TO_CHAR(${leads.fecha} AT TIME ZONE 'America/Santiago', 'YYYY-MM-DD')`,
+    total: sql<number>`COUNT(*)`,
+    confirmadas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'CONFIRMADA' THEN 1 ELSE 0 END)`,
+    canceladas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'CANCELADA' THEN 1 ELSE 0 END)`,
+    reagendadas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} = 'REAGENDADA' THEN 1 ELSE 0 END)`,
+    asistidas: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'ASISTIÓ' THEN 1 ELSE 0 END)`,
+    noShow: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'NO SHOW' THEN 1 ELSE 0 END)`,
+  })
+    .from(leads)
+    .where(and(
+      sql`${leads.fecha} IS NOT NULL`,
+      ...(conditions.length > 0 ? conditions : []),
+    ))
+    .groupBy(sql`TO_CHAR(${leads.fecha} AT TIME ZONE 'America/Santiago', 'YYYY-MM-DD')`)
+    .orderBy(sql`TO_CHAR(${leads.fecha} AT TIME ZONE 'America/Santiago', 'YYYY-MM-DD') ASC`);
+
+  // Average daily from the timeline (only days where we actually had citas)
+  const diasActivos = timeline.length;
+  const totalConFecha = Number(totals?.withFecha ?? 0);
+  const confirmadasCount = Number(totals?.confirmadas ?? 0);
+  const promedioDiarioTotal = diasActivos > 0 ? totalConFecha / diasActivos : 0;
+  const promedioDiarioConfirmadas = diasActivos > 0 ? confirmadasCount / diasActivos : 0;
+
+  return {
+    totals: {
+      total: Number(totals?.total ?? 0),
+      pendienteConfirmacion: Number(totals?.pendienteConfirmacion ?? 0),
+      confirmadas: confirmadasCount,
+      noConfirmadas: Number(totals?.noConfirmadas ?? 0),
+      canceladas: Number(totals?.canceladas ?? 0),
+      reagendadas: Number(totals?.reagendadas ?? 0),
+      asistidas: Number(totals?.asistidas ?? 0),
+      noShow: Number(totals?.noShow ?? 0),
+      pendienteAsistencia: Number(totals?.pendienteAsistencia ?? 0),
+      invalidas: Number(totals?.invalidas ?? 0),
+      nuevasHoy: Number(totals?.nuevasHoy ?? 0),
+      diasActivos,
+      promedioDiarioTotal,
+      promedioDiarioConfirmadas,
+    },
+    timeline: timeline.map(t => ({
+      date: t.date,
+      total: Number(t.total),
+      confirmadas: Number(t.confirmadas),
+      canceladas: Number(t.canceladas),
+      reagendadas: Number(t.reagendadas),
+      asistidas: Number(t.asistidas),
+      noShow: Number(t.noShow),
+    })),
+  };
+}
+
+// ==================== DASHBOARD > PIPELINE (Value of open opportunities) ====================
+/**
+ * Pipeline value = sum(ticket) of open confirmed demos that haven't happened yet.
+ * A lead counts as "pipeline" when:
+ *   - estadoConfirmacion = CONFIRMADA (they said they'll come)
+ *   - asistencia = PENDIENTE (haven't attended yet)
+ *   - outcome = PENDIENTE (not closed/lost)
+ * Ticket value per lead: `contractedRevenue` → `ticket` → global default.
+ *
+ * Also returns top N open opportunities by ticket value.
+ */
+export async function getPipelineValue(filters?: { mes?: string; semana?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const defaultTicket = await getDefaultTicketValue();
+
+  const conditions = [];
+  if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Effective ticket value per lead:
+  //   1. contractedRevenue (if set and > 0) — what they were actually sold at
+  //   2. setupFee + 3*recurrenciaMensual (for SETUP_MONTHLY products, estimated 3-month LTV)
+  //   3. facturado (if set and > 0) — invoiced amount fallback
+  //   4. the global default (platform-wide setting)
+  const effectiveTicketExpr = sql<number>`COALESCE(
+    NULLIF(CAST(${leads.contractedRevenue} AS DECIMAL(10,2)), 0),
+    NULLIF(CAST(${leads.setupFee} AS DECIMAL(10,2)) + 3 * CAST(${leads.recurrenciaMensual} AS DECIMAL(10,2)), 0),
+    NULLIF(CAST(${leads.facturado} AS DECIMAL(10,2)), 0),
+    ${defaultTicket}
+  )`;
+
+  const [row] = await db.select({
+    // Pipeline = open opportunities, regardless of outcome of "confirmada" timing
+    pipelineValue: sql<number>`SUM(CASE
+      WHEN ${leads.estadoConfirmacion} = 'CONFIRMADA'
+       AND ${leads.asistencia} = 'PENDIENTE'
+       AND ${leads.outcome} = 'PENDIENTE'
+      THEN ${effectiveTicketExpr} ELSE 0 END)`,
+    pipelineCount: sql<number>`SUM(CASE
+      WHEN ${leads.estadoConfirmacion} = 'CONFIRMADA'
+       AND ${leads.asistencia} = 'PENDIENTE'
+       AND ${leads.outcome} = 'PENDIENTE'
+      THEN 1 ELSE 0 END)`,
+    // All open opportunities — includes not yet confirmed
+    openOpportunities: sql<number>`SUM(CASE
+      WHEN ${leads.outcome} = 'PENDIENTE'
+       AND ${leads.asistencia} = 'PENDIENTE'
+      THEN 1 ELSE 0 END)`,
+    openValue: sql<number>`SUM(CASE
+      WHEN ${leads.outcome} = 'PENDIENTE'
+       AND ${leads.asistencia} = 'PENDIENTE'
+      THEN ${effectiveTicketExpr} ELSE 0 END)`,
+    // Closed value for the period (ya cerrado = venta)
+    closedValue: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN COALESCE(CAST(${leads.cashCollected} AS DECIMAL(10,2)), 0) ELSE 0 END)`,
+    closedCount: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN 1 ELSE 0 END)`,
+    // Average ticket across all with a price
+    avgTicket: sql<number>`AVG(${effectiveTicketExpr})`,
+  }).from(leads).where(where);
+
+  // Top 10 open opportunities (confirmed, not yet attended)
+  const topOpps = await db.select({
+    id: leads.id,
+    nombre: leads.nombre,
+    correo: leads.correo,
+    telefono: leads.telefono,
+    score: leads.score,
+    scoreLabel: leads.scoreLabel,
+    estadoConfirmacion: leads.estadoConfirmacion,
+    asistencia: leads.asistencia,
+    outcome: leads.outcome,
+    closer: leads.closer,
+    fecha: leads.fecha,
+    mes: leads.mes,
+    semana: leads.semana,
+    effectiveTicket: effectiveTicketExpr,
+  })
+    .from(leads)
+    .where(and(
+      eq(leads.estadoConfirmacion, "CONFIRMADA"),
+      eq(leads.asistencia, "PENDIENTE"),
+      eq(leads.outcome, "PENDIENTE"),
+      ...(conditions.length > 0 ? conditions : []),
+    ))
+    .orderBy(desc(effectiveTicketExpr))
+    .limit(10);
+
+  const pipelineValue = Number(row?.pipelineValue ?? 0);
+  const closedValue = Number(row?.closedValue ?? 0);
+  const conversionRate = pipelineValue > 0 ? (closedValue / (pipelineValue + closedValue)) * 100 : 0;
+
+  return {
+    defaultTicket,
+    pipelineValue,
+    pipelineCount: Number(row?.pipelineCount ?? 0),
+    openOpportunities: Number(row?.openOpportunities ?? 0),
+    openValue: Number(row?.openValue ?? 0),
+    closedValue,
+    closedCount: Number(row?.closedCount ?? 0),
+    avgTicket: Number(row?.avgTicket ?? 0),
+    conversionRate,
+    topOpps: topOpps.map(o => ({
+      ...o,
+      effectiveTicket: Number(o.effectiveTicket),
+    })),
+  };
+}
+
+// ==================== DASHBOARD > FUENTES (Lead sources breakdown) ====================
+/**
+ * Breakdown of leads by source channel, with sub-breakdowns for Instagram
+ * (by funnel stage) and Ads (by UTM campaign/content/term).
+ */
+export async function getSourceBreakdown(filters?: { mes?: string; semana?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = [];
+  if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Totals by origen
+  const byOrigen = await db.select({
+    origen: leads.origen,
+    count: sql<number>`COUNT(*)`,
+    ventas: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN 1 ELSE 0 END)`,
+    revenue: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN COALESCE(CAST(${leads.cashCollected} AS DECIMAL(10,2)), 0) ELSE 0 END)`,
+  }).from(leads).where(where).groupBy(leads.origen);
+
+  // Instagram funnel breakdown (only for origen = INSTAGRAM)
+  const igByStage = await db.select({
+    stage: leads.igFunnelStage,
+    count: sql<number>`COUNT(*)`,
+    hasManychat: sql<number>`SUM(CASE WHEN ${leads.manychatSubscriberId} IS NOT NULL AND ${leads.manychatSubscriberId} != '' THEN 1 ELSE 0 END)`,
+  })
+    .from(leads)
+    .where(and(
+      eq(leads.origen, "INSTAGRAM"),
+      ...(conditions.length > 0 ? conditions : []),
+    ))
+    .groupBy(leads.igFunnelStage);
+
+  // Instagram sub-categories (ManyChat-sourced vs bio-link estimated)
+  const [igSources] = await db.select({
+    total: sql<number>`COUNT(*)`,
+    withManychat: sql<number>`SUM(CASE WHEN ${leads.manychatSubscriberId} IS NOT NULL AND ${leads.manychatSubscriberId} != '' THEN 1 ELSE 0 END)`,
+    withoutManychat: sql<number>`SUM(CASE WHEN (${leads.manychatSubscriberId} IS NULL OR ${leads.manychatSubscriberId} = '') THEN 1 ELSE 0 END)`,
+  })
+    .from(leads)
+    .where(and(
+      eq(leads.origen, "INSTAGRAM"),
+      ...(conditions.length > 0 ? conditions : []),
+    ));
+
+  // Ads breakdown by UTM (only leads with UTM campaign populated)
+  const adsBreakdown = await db.select({
+    utmCampaign: leads.utmCampaign,
+    utmContent: leads.utmContent,
+    utmTerm: leads.utmTerm,
+    leads: sql<number>`COUNT(*)`,
+    agendas: sql<number>`SUM(CASE WHEN ${leads.estadoConfirmacion} IN ('CONFIRMADA', 'PENDIENTE', 'REAGENDADA') THEN 1 ELSE 0 END)`,
+    ventas: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN 1 ELSE 0 END)`,
+    revenue: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN COALESCE(CAST(${leads.cashCollected} AS DECIMAL(10,2)), 0) ELSE 0 END)`,
+  })
+    .from(leads)
+    .where(and(
+      sql`${leads.utmCampaign} IS NOT NULL AND ${leads.utmCampaign} != ''`,
+      ...(conditions.length > 0 ? conditions : []),
+    ))
+    .groupBy(leads.utmCampaign, leads.utmContent, leads.utmTerm)
+    .orderBy(sql`COUNT(*) DESC`);
+
+  return {
+    byOrigen: byOrigen.map(r => ({
+      origen: r.origen,
+      count: Number(r.count),
+      ventas: Number(r.ventas),
+      revenue: Number(r.revenue),
+    })),
+    igByStage: igByStage.map(r => ({
+      stage: r.stage,
+      count: Number(r.count),
+      hasManychat: Number(r.hasManychat),
+    })),
+    igSources: {
+      total: Number(igSources?.total ?? 0),
+      withManychat: Number(igSources?.withManychat ?? 0),
+      withoutManychat: Number(igSources?.withoutManychat ?? 0),
+    },
+    adsBreakdown: adsBreakdown.map(r => ({
+      utmCampaign: r.utmCampaign,
+      utmContent: r.utmContent,
+      utmTerm: r.utmTerm,
+      leads: Number(r.leads),
+      agendas: Number(r.agendas),
+      ventas: Number(r.ventas),
+      revenue: Number(r.revenue),
+    })),
+  };
+}
+
+// ==================== CONTACTOS > TIMELINE (Unified event stream per lead) ====================
+/**
+ * Returns the full journey of one contact as a flat list of events, ordered
+ * chronologically. Powers `/contactos/todos` split view.
+ *
+ * Events come from these sources (and then merged client-side):
+ *   - `leads` itself: creation, estado transitions, triage, attendance, outcome
+ *   - `contactAttempts`: every call/WhatsApp/DM attempt
+ *   - `leadComments`: team notes
+ *   - `followUps`: follow-up creation + their logs
+ *   - `leadScoring`: score assignment
+ *   - `leadDataEntries`: form/triage/scoring submissions
+ */
+export type TimelineEvent = {
+  kind: "lead_created" | "first_contact" | "contact_attempt" | "confirmation" | "triage" | "attendance" | "outcome" | "follow_up_created" | "follow_up_log" | "comment" | "scoring" | "data_entry";
+  timestamp: string; // ISO
+  title: string;
+  detail?: string | null;
+  icon?: string; // e.g. "Phone", "CheckCircle", "AlertCircle" — Lucide name string
+  meta?: Record<string, any>;
+};
+
+export async function getContactoTimeline(leadId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!lead) throw new Error("Lead not found");
+
+  const [attempts, comments, followUpRows, scoringRow, dataEntries] = await Promise.all([
+    db.select().from(contactAttempts).where(eq(contactAttempts.leadId, leadId)).orderBy(asc(contactAttempts.timestamp)),
+    db.select().from(leadComments).where(eq(leadComments.leadId, leadId)).orderBy(asc(leadComments.createdAt)),
+    db.select().from(followUps).where(eq(followUps.leadId, leadId)).orderBy(asc(followUps.createdAt)),
+    db.select().from(leadScoring).where(eq(leadScoring.leadId, leadId)).orderBy(desc(leadScoring.id)).limit(1),
+    db.select().from(leadDataEntries).where(eq(leadDataEntries.leadId, leadId)).orderBy(asc(leadDataEntries.createdAt)),
+  ]);
+
+  // Follow-up logs: fetch all logs for this lead's follow-ups
+  const followUpIds = followUpRows.map(f => f.id);
+  const fuLogs = followUpIds.length > 0
+    ? await db.select().from(followUpLogs).where(inArray(followUpLogs.followUpId, followUpIds)).orderBy(asc(followUpLogs.createdAt))
+    : [];
+
+  const events: TimelineEvent[] = [];
+
+  // Lead creation
+  events.push({
+    kind: "lead_created",
+    timestamp: (lead.createdAt instanceof Date ? lead.createdAt : new Date(lead.createdAt)).toISOString(),
+    title: "Lead creado",
+    detail: `Origen: ${lead.origen ?? "—"} · ${lead.tipo ?? ""}${lead.setterAsignado ? ` · Setter: ${lead.setterAsignado}` : ""}`,
+    icon: "UserPlus",
+    meta: { origen: lead.origen, tipo: lead.tipo, setter: lead.setterAsignado },
+  });
+
+  // First contact
+  if (lead.fechaPrimerContacto) {
+    const ts = lead.fechaPrimerContacto instanceof Date ? lead.fechaPrimerContacto : new Date(lead.fechaPrimerContacto);
+    events.push({
+      kind: "first_contact",
+      timestamp: ts.toISOString(),
+      title: "Primer contacto",
+      detail: lead.resultadoContacto ? `Resultado: ${lead.resultadoContacto}` : null,
+      icon: "PhoneCall",
+    });
+  }
+
+  // Contact attempts
+  for (const a of attempts) {
+    const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
+    events.push({
+      kind: "contact_attempt",
+      timestamp: ts.toISOString(),
+      title: `${a.canal}${a.resultado ? ` — ${a.resultado}` : ""}`,
+      detail: a.notas || (a.realizadoPor ? `por ${a.realizadoPor}` : null),
+      icon: a.canal === "WHATSAPP" ? "MessageCircle" : a.canal === "EMAIL" ? "Mail" : a.canal === "DM_INSTAGRAM" ? "Instagram" : "Phone",
+      meta: { canal: a.canal, resultado: a.resultado, realizadoPor: a.realizadoPor },
+    });
+  }
+
+  // Confirmation state (use updatedAt as best-guess since we don't have audit log)
+  if (lead.estadoConfirmacion && lead.estadoConfirmacion !== "PENDIENTE") {
+    const ts = lead.updatedAt instanceof Date ? lead.updatedAt : new Date(lead.updatedAt);
+    events.push({
+      kind: "confirmation",
+      timestamp: ts.toISOString(),
+      title: `Confirmación: ${lead.estadoConfirmacion}`,
+      icon: lead.estadoConfirmacion === "CONFIRMADA" ? "CheckCircle2" : lead.estadoConfirmacion === "CANCELADA" ? "XCircle" : "RefreshCw",
+    });
+  }
+
+  // Triage
+  if (lead.triage) {
+    const ts = lead.updatedAt instanceof Date ? lead.updatedAt : new Date(lead.updatedAt);
+    events.push({
+      kind: "triage",
+      timestamp: ts.toISOString(),
+      title: "Triage completado",
+      detail: lead.triage,
+      icon: "ClipboardCheck",
+    });
+  }
+
+  // Attendance
+  if (lead.asistencia && lead.asistencia !== "PENDIENTE") {
+    const ts = lead.fecha instanceof Date ? lead.fecha : lead.fecha ? new Date(lead.fecha) : lead.updatedAt instanceof Date ? lead.updatedAt : new Date(lead.updatedAt);
+    events.push({
+      kind: "attendance",
+      timestamp: ts.toISOString(),
+      title: lead.asistencia === "ASISTIÓ" ? "Asistió" : "No show",
+      icon: lead.asistencia === "ASISTIÓ" ? "CheckCircle2" : "AlertCircle",
+    });
+  }
+
+  // Outcome
+  if (lead.outcome && lead.outcome !== "PENDIENTE") {
+    const ts = lead.updatedAt instanceof Date ? lead.updatedAt : new Date(lead.updatedAt);
+    let title = `Outcome: ${lead.outcome}`;
+    let detail: string | null = null;
+    if (lead.outcome === "VENTA") {
+      title = `Venta cerrada`;
+      const cash = Number(lead.cashCollected ?? 0);
+      const revenue = Number(lead.contractedRevenue ?? 0);
+      detail = cash > 0
+        ? `Cash: $${cash.toLocaleString()}${revenue > 0 ? ` · Contratado: $${revenue.toLocaleString()}` : ""}${lead.productoTipo ? ` · ${lead.productoTipo}` : ""}`
+        : (lead.productoTipo ? `Producto: ${lead.productoTipo}` : null);
+    } else if (lead.outcome === "PERDIDA") {
+      title = `Oportunidad perdida`;
+    } else if (lead.outcome === "SEGUIMIENTO") {
+      title = `Movido a seguimiento`;
+    }
+    events.push({
+      kind: "outcome",
+      timestamp: ts.toISOString(),
+      title,
+      detail,
+      icon: lead.outcome === "VENTA" ? "DollarSign" : lead.outcome === "PERDIDA" ? "XCircle" : "RotateCcw",
+      meta: { outcome: lead.outcome, closer: lead.closer },
+    });
+  }
+
+  // Follow-ups created
+  for (const fu of followUpRows) {
+    const ts = fu.createdAt instanceof Date ? fu.createdAt : new Date(fu.createdAt);
+    events.push({
+      kind: "follow_up_created",
+      timestamp: ts.toISOString(),
+      title: `Follow-up ${fu.tipo} creado`,
+      detail: fu.ultimaObjecion || (fu.closerAsignado ? `Asignado: ${fu.closerAsignado}` : null),
+      icon: "Flame",
+      meta: { followUpId: fu.id, tipo: fu.tipo },
+    });
+  }
+
+  // Follow-up logs
+  for (const log of fuLogs) {
+    const ts = log.createdAt instanceof Date ? log.createdAt : new Date(log.createdAt);
+    events.push({
+      kind: "follow_up_log",
+      timestamp: ts.toISOString(),
+      title: `Follow-up: ${log.accion}`,
+      detail: log.detalle || (log.realizadoPor ? `por ${log.realizadoPor}` : null),
+      icon: "Flame",
+      meta: { accion: log.accion },
+    });
+  }
+
+  // Comments
+  for (const c of comments) {
+    const ts = c.createdAt instanceof Date ? c.createdAt : new Date(c.createdAt);
+    events.push({
+      kind: "comment",
+      timestamp: ts.toISOString(),
+      title: `Nota de ${c.autor}`,
+      detail: c.texto,
+      icon: "MessageSquare",
+      meta: { autor: c.autor, autorRole: c.autorRole },
+    });
+  }
+
+  // Scoring (most-recent only)
+  if (scoringRow[0]) {
+    const s = scoringRow[0];
+    const ts = s.createdAt instanceof Date ? s.createdAt : new Date(s.createdAt);
+    events.push({
+      kind: "scoring",
+      timestamp: ts.toISOString(),
+      title: `Score asignado: ${s.scoreLabel ?? "—"}${s.scoreFinal != null ? ` (${s.scoreFinal})` : ""}`,
+      detail: s.scoreTotal != null ? `Score total: ${s.scoreTotal}` : null,
+      icon: "Star",
+      meta: { scoreLabel: s.scoreLabel, scoreFinal: s.scoreFinal },
+    });
+  }
+
+  // Data entries (triage forms, scoring forms, etc.)
+  for (const e of dataEntries) {
+    const ts = e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt);
+    events.push({
+      kind: "data_entry",
+      timestamp: ts.toISOString(),
+      title: `Formulario: ${e.source}${e.formId ? ` (${e.formId})` : ""}`,
+      detail: e.scoreLabel ? `Score: ${e.scoreLabel}${e.scoreFinal != null ? ` · ${e.scoreFinal}` : ""}` : null,
+      icon: "FileText",
+      meta: { source: e.source, formId: e.formId },
+    });
+  }
+
+  // Sort chronologically (oldest first for timeline rendering top-down)
+  events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  return {
+    lead: {
+      id: lead.id,
+      nombre: lead.nombre,
+      correo: lead.correo,
+      telefono: lead.telefono,
+      instagram: lead.instagram,
+      origen: lead.origen,
+      tipo: lead.tipo,
+      estadoConfirmacion: lead.estadoConfirmacion,
+      asistencia: lead.asistencia,
+      outcome: lead.outcome,
+      score: lead.score,
+      scoreLabel: lead.scoreLabel,
+      setterAsignado: lead.setterAsignado,
+      closer: lead.closer,
+      fecha: lead.fecha,
+      createdAt: lead.createdAt,
+      cashCollected: lead.cashCollected,
+      contractedRevenue: lead.contractedRevenue,
+      facturado: lead.facturado,
+      utmCampaign: lead.utmCampaign,
+      utmContent: lead.utmContent,
+      utmTerm: lead.utmTerm,
+      mes: lead.mes,
+      semana: lead.semana,
+    },
+    events,
+  };
 }

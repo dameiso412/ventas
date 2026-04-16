@@ -543,6 +543,72 @@ export const appRouter = router({
         semana: z.number().optional(),
       }).optional())
       .query(({ input }) => db.getDataValidation(input ?? undefined)),
+
+    /** Informe de citas — breakdown por estadoConfirmacion + asistencia, timeline diaria */
+    citasReport: publicProcedure
+      .input(z.object({
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+      }).optional())
+      .query(({ input }) => db.getCitasReport(input ?? undefined)),
+
+    /** Valor del pipeline + top oportunidades abiertas */
+    pipelineValue: publicProcedure
+      .input(z.object({
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+      }).optional())
+      .query(({ input }) => db.getPipelineValue(input ?? undefined)),
+
+    /** Breakdown de fuentes: origen · Instagram funnel · Ads por UTM */
+    sourceBreakdown: publicProcedure
+      .input(z.object({
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+      }).optional())
+      .query(({ input }) => db.getSourceBreakdown(input ?? undefined)),
+  }),
+
+  // ==================== SYSTEM CONFIG (Platform-wide settings) ====================
+  systemConfig: router({
+    /** Get a single config value */
+    get: publicProcedure
+      .input(z.object({ key: z.string() }))
+      .query(({ input }) => db.getSystemConfig(input.key)),
+
+    /** Get many keys at once */
+    getMany: publicProcedure
+      .input(z.object({ keys: z.array(z.string()) }))
+      .query(({ input }) => db.getSystemConfigMany(input.keys)),
+
+    /** Get the default ticket value (parsed as number) */
+    getDefaultTicket: publicProcedure
+      .query(() => db.getDefaultTicketValue()),
+
+    /** Set a config value — admin-only for safety */
+    set: adminProcedure
+      .input(z.object({
+        key: z.string(),
+        value: z.string().nullable(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.setSystemConfig({
+          key: input.key,
+          value: input.value,
+          description: input.description,
+          updatedBy: ctx.user?.name ?? ctx.user?.email ?? undefined,
+        });
+        return { success: true };
+      }),
+  }),
+
+  // ==================== CONTACTOS (Unified contacts view) ====================
+  contactos: router({
+    /** Timeline unificado de un contacto — agrega creación, intentos, confirmación, triage, asistencia, outcome, follow-ups, logs, comentarios, scoring, data entries */
+    getTimeline: publicProcedure
+      .input(z.object({ leadId: z.number() }))
+      .query(({ input }) => db.getContactoTimeline(input.leadId)),
   }),
 
   // ==================== CONSTRAINT DIAGNOSIS ====================
