@@ -808,3 +808,29 @@ export const manychatEvents = pgTable("manychat_events", {
 
 export type ManychatEvent = typeof manychatEvents.$inferSelect;
 export type InsertManychatEvent = typeof manychatEvents.$inferInsert;
+
+// ==================== SYSTEM CONFIG ====================
+/**
+ * Global key/value config for platform-wide settings that aren't per-lead.
+ *
+ * Used by:
+ *   - Dashboard/Pipeline — `defaultTicketValue` (fallback when a lead's
+ *     `contractedRevenue` or `ticket` is null).
+ *   - Future features (Ventas/Comisiones — commission rates per closer).
+ *
+ * The value is stored as text — JSON.stringify/parse on the consumer side.
+ * Kept deliberately small (no typed columns per feature) so new settings
+ * don't need a migration.
+ */
+export const systemConfig = pgTable("system_config", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value"),
+  description: text("description"),
+  updatedBy: varchar("updatedBy", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type SystemConfig = typeof systemConfig.$inferSelect;
+export type InsertSystemConfig = typeof systemConfig.$inferInsert;
