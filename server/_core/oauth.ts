@@ -95,4 +95,52 @@ export function registerAuthRoutes(app: Express) {
       res.status(500).json({ error: "Authentication failed" });
     }
   });
+
+  /**
+   * POST /api/auth/magic-link
+   * Validates the email against the allowed_emails whitelist BEFORE asking Supabase
+   * to send a magic link. This prevents Supabase Auth from piling up ghost accounts
+   * for unauthorized emails and avoids leaking which emails are whitelisted.
+   */
+  app.post("/api/auth/magic-link", async (req: Request, res: Response) => {
+    const { email: rawEmail } = req.body;
+
+    if (!rawEmail || typeof rawEmail !== "string") {
+      res.status(400).json({ error: "email requerido" });
+      return;
+    }
+
+    const email = rawEmail.toLowerCase().trim();
+    const genericMessage = "Si tu correo está autorizado, revisa tu bandeja en unos segundos.";
+
+    try {
+      const isAdmin = email === ENV.adminEmail;
+      const allowed = isAdmin ? true : !!(await db.checkEmailAllowed(email));
+
+      if (!allowed) {
+        // Generic response — don't reveal whether the email is in the whitelist
+        console.log(`[Auth] Magic link requested for non-whitelisted email: ${email}`);
+        res.json({ success: true, message: genericMessage });
+        return;
+      }
+
+      const redirectTo = `${ENV.appUrl}/auth/callback`;
+      const { error } = await supabaseAdmin.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: redirectTo, shouldCreateUser: true },
+      });
+
+      if (error) {
+        console.error("[Auth] signInWithOtp failed:", error);
+        res.status(500).json({ error: "No se pudo enviar el link. Intenta de nuevo en un momento." });
+        return;
+      }
+
+      console.log(`[Auth] Magic link sent to ${email}`);
+      res.json({ success: true, message: genericMessage });
+    } catch (error) {
+      console.error("[Auth] Magic link request failed:", error);
+      res.status(500).json({ error: "Error enviando el link. Intenta de nuevo." });
+    }
+  });
 }

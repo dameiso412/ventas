@@ -6,6 +6,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import AccesoDenegado from "./pages/AccesoDenegado";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import { useAuth } from "./_core/hooks/useAuth";
 import { hasAccess } from "@shared/permissions";
 import { DashboardLayoutSkeleton } from "./components/DashboardLayoutSkeleton";
@@ -166,6 +167,7 @@ function App() {
           <Toaster />
           <Switch>
             <Route path="/login" component={Login} />
+            <Route path="/auth/callback" component={AuthCallback} />
             <Route path="/acceso-denegado" component={AccesoDenegado} />
             <Route>
               <CRMRouter />

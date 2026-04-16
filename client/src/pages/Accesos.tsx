@@ -38,6 +38,7 @@ import {
   Users,
   Mail,
   Clock,
+  Send,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_BG_COLORS, type CrmRole } from "@shared/permissions";
 
@@ -250,6 +251,32 @@ export default function Accesos() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [sendingLinkId, setSendingLinkId] = useState<number | null>(null);
+
+  const handleSendMagicLink = async (item: any) => {
+    if (!item.activo) {
+      toast.error("El email está inactivo. Actívalo antes de enviar el link.");
+      return;
+    }
+    setSendingLinkId(item.id);
+    try {
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: item.email }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "No se pudo enviar el link");
+        return;
+      }
+      toast.success(`Link enviado a ${item.email}`);
+    } catch (err) {
+      toast.error("Error de conexión al enviar el link");
+    } finally {
+      setSendingLinkId(null);
+    }
+  };
 
   const handleInvalidate = useCallback(() => {
     utils.access.listAllowed.invalidate();
@@ -429,6 +456,20 @@ export default function Accesos() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-primary hover:text-primary"
+                            onClick={() => handleSendMagicLink(item)}
+                            disabled={sendingLinkId === item.id || !item.activo}
+                            title={
+                              item.activo
+                                ? "Enviar link de acceso por correo"
+                                : "Activa el email antes de enviar el link"
+                            }
+                          >
+                            <Send className={`h-3.5 w-3.5 ${sendingLinkId === item.id ? "animate-pulse" : ""}`} />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

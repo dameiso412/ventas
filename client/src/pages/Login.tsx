@@ -2,14 +2,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { supabase } from "@/lib/supabase";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Mail, CheckCircle2 } from "lucide-react";
 
 export default function Login() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,39 +16,21 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) {
-        setError(authError.message === "Invalid login credentials"
-          ? "Email o contraseña incorrectos"
-          : authError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!data.session) {
-        setError("No se pudo crear la sesión");
-        setLoading(false);
-        return;
-      }
-
-      // Exchange Supabase token for our app session cookie
-      const response = await fetch("/api/auth/callback", {
+      const response = await fetch("/api/auth/magic-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: data.session.access_token }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const result = await response.json();
 
-      if (result.success) {
-        window.location.href = result.redirect || "/";
-      } else {
-        setError(result.error || "Error de autenticación");
+      if (!response.ok) {
+        setError(result.error || "No se pudo enviar el link. Intenta de nuevo.");
+        setLoading(false);
+        return;
       }
+
+      setSent(true);
     } catch (err) {
       setError("Error de conexión. Intenta de nuevo.");
     } finally {
@@ -68,46 +49,66 @@ export default function Login() {
           </div>
           <CardTitle className="text-2xl">SacaMedi CRM</CardTitle>
           <CardDescription>
-            Inicia sesión para acceder al ecosistema de ventas
+            {sent
+              ? "Te enviamos un link para entrar"
+              : "Inicia sesión con tu correo"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium">
-                Email
-              </label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
+          {sent ? (
+            <div className="space-y-4 text-center">
+              <div className="flex justify-center">
+                <div className="p-4 rounded-full bg-green-500/10">
+                  <CheckCircle2 className="h-10 w-10 text-green-500" />
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Si tu correo está autorizado, te enviamos un link a{" "}
+                <strong className="text-foreground">{email}</strong>.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Revisa tu bandeja (y el spam). Puede tardar un minuto en llegar.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setSent(false);
+                  setEmail("");
+                }}
+              >
+                Usar otro correo
+              </Button>
             </div>
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                Contraseña
-              </label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            {error && (
-              <p className="text-sm text-destructive text-center">{error}</p>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
-            </Button>
-          </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  autoFocus
+                />
+              </div>
+              {error && (
+                <p className="text-sm text-destructive text-center">{error}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={loading || !email}>
+                <Mail className="mr-2 h-4 w-4" />
+                {loading ? "Enviando..." : "Enviar link de acceso"}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Te enviaremos un link a tu correo para entrar sin contraseña.
+              </p>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>
