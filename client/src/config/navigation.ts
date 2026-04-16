@@ -105,8 +105,8 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: DollarSign,
     defaultPath: "/ventas/proyecciones",
     subTabs: [
-      { label: "Pagos", path: "/ventas/pagos", icon: Receipt, roles: ADMIN_CLOSER, comingSoon: true },
-      { label: "Comisiones", path: "/ventas/comisiones", icon: Percent, roles: ADMIN_CLOSER, comingSoon: true },
+      { label: "Pagos", path: "/ventas/pagos", icon: Receipt, roles: ADMIN_CLOSER },
+      { label: "Comisiones", path: "/ventas/comisiones", icon: Percent, roles: ADMIN_CLOSER },
       { label: "Proyecciones", path: "/ventas/proyecciones", icon: TrendingUp, roles: ADMIN_CLOSER },
       { label: "Calculadora", path: "/ventas/calculadora", icon: Calculator, roles: ADMIN_ONLY },
     ],
