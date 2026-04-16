@@ -68,9 +68,9 @@ export const NAV_SECTIONS: NavSection[] = [
     defaultPath: "/dashboard/comercial",
     subTabs: [
       { label: "Comercial", path: "/dashboard/comercial", icon: BarChart3, roles: ALL_ROLES },
-      { label: "Citas", path: "/dashboard/citas", icon: CalendarCheck, roles: ALL_ROLES, comingSoon: true },
-      { label: "Pipeline", path: "/dashboard/pipeline", icon: TrendingUp, roles: ALL_ROLES, comingSoon: true },
-      { label: "Fuentes", path: "/dashboard/fuentes", icon: Target, roles: ADMIN_ONLY, comingSoon: true },
+      { label: "Citas", path: "/dashboard/citas", icon: CalendarCheck, roles: ALL_ROLES },
+      { label: "Pipeline", path: "/dashboard/pipeline", icon: TrendingUp, roles: ALL_ROLES },
+      { label: "Fuentes", path: "/dashboard/fuentes", icon: Target, roles: ADMIN_ONLY },
     ],
   },
   {
@@ -79,7 +79,7 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: Users,
     defaultPath: "/contactos/citas",
     subTabs: [
-      { label: "Todos", path: "/contactos/todos", icon: Users, roles: ALL_ROLES, comingSoon: true },
+      { label: "Todos", path: "/contactos/todos", icon: Users, roles: ALL_ROLES },
       { label: "Cola", path: "/contactos/cola", icon: ListTodo, roles: ADMIN_SETTER },
       { label: "Confirmaciones", path: "/contactos/confirmaciones", icon: ClipboardCheck, roles: ADMIN_SETTER },
       { label: "Citas", path: "/contactos/citas", icon: CalendarCheck, roles: ALL_ROLES },
