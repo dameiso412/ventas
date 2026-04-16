@@ -26,6 +26,7 @@ import { CallRecordingTriage } from "@/components/CallRecordingTriage";
 import { ScoreBadge, OutcomeBadge, ContactoBadge, EstadoLeadBadge } from "@/components/LeadBadges";
 import { calculateBusinessHours } from "@shared/businessHours";
 import { LeadEditSheet } from "@/components/LeadEditSheet";
+import { getCurrentMes, getCurrentSemana } from "@shared/period";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -73,8 +74,10 @@ export default function Citas() {
   const [viewMode, setViewMode] = useState<"lista" | "pipeline">("lista");
   // Sub-filter for AGENDAS: upcoming vs past appointments
   const [timeFilter, setTimeFilter] = useState<"proximas" | "pasadas">("proximas");
-  const [mes, setMes] = useState<string>("all");
-  const [semana, setSemana] = useState<string>("all");
+  // Default filters: current Chile month + week so every page opens
+  // scoped to "this period" instead of "todos los tiempos".
+  const [mes, setMes] = useState<string>(() => getCurrentMes());
+  const [semana, setSemana] = useState<string>(() => String(getCurrentSemana()));
   const [origen, setOrigen] = useState<string>("all");
   const [setter, setSetter] = useState<string>("all");
   const [closer, setCloser] = useState<string>("all");

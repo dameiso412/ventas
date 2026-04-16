@@ -22,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { getCurrentMes, getCurrentSemana } from "@shared/period";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -106,11 +107,10 @@ function CostKPICard({ title, value, benchmark, icon: Icon, color, tooltip }: {
 }
 
 export default function Home() {
-  const [mes, setMes] = useState<string>(() => {
-    const now = new Date();
-    return MESES[now.getMonth()];
-  });
-  const [semana, setSemana] = useState<string>("all");
+  // Default to current Chile period (mes + semana) so the dashboard opens
+  // showing "esta semana de este mes" instead of the all-time view.
+  const [mes, setMes] = useState<string>(() => getCurrentMes());
+  const [semana, setSemana] = useState<string>(() => String(getCurrentSemana()));
 
 
   const filters = useMemo(() => ({

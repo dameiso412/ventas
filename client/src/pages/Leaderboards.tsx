@@ -8,6 +8,7 @@ import { useState, useMemo } from "react";
 import { Trophy, Medal, Award, Crown, Settings2, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation } from "wouter";
 import { useStatusColors } from "@/hooks/useStatusColors";
+import { getCurrentMes, getCurrentSemana } from "@shared/period";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -30,8 +31,9 @@ function ScoreBar({ score, color }: { score: number; color: string }) {
 export default function Leaderboards() {
   const [, navigate] = useLocation();
   const sc = useStatusColors();
-  const [mes, setMes] = useState<string>("all");
-  const [semana, setSemana] = useState<string>("all");
+  // Default to current Chile period
+  const [mes, setMes] = useState<string>(() => getCurrentMes());
+  const [semana, setSemana] = useState<string>(() => String(getCurrentSemana()));
   const [showWeights, setShowWeights] = useState(false);
   const [mode, setMode] = useState<"simple" | "weighted">("weighted");
 

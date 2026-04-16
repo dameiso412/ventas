@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useTeamMembers } from "@/hooks/useTeamMembers";
 import { TeamMemberSelect } from "@/components/TeamMemberSelect";
+import { getCurrentMes, getCurrentSemana } from "@shared/period";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -54,8 +55,9 @@ const emptyForm = {
 };
 
 export default function SetterTracker() {
-  const [mes, setMes] = useState<string>("all");
-  const [semana, setSemana] = useState<string>("all");
+  // Default to current Chile period so the tracker opens focused on "ahora"
+  const [mes, setMes] = useState<string>(() => getCurrentMes());
+  const [semana, setSemana] = useState<string>(() => String(getCurrentSemana()));
   const [setter, setSetter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
