@@ -4126,3 +4126,241 @@ export async function getContactoTimeline(leadId: number) {
     events,
   };
 }
+
+// ==================== SALES > PAYMENTS + COMMISSIONS ====================
+
+export type PaymentRow = {
+  id: number;
+  nombre: string | null;
+  closer: string | null;
+  productoTipo: string | null;
+  cashCollected: number;
+  contractedRevenue: number;
+  facturado: number;
+  setupFee: number;
+  recurrenciaMensual: number;
+  fechaProximoCobro: string | null;
+  /** Best-guess "payment date" — uses updatedAt since that's when cashCollected was typically set */
+  paymentDate: string;
+  /** Lead's own `fecha` (demo/agenda date) for context */
+  fecha: string | null;
+  mes: string | null;
+  semana: number | null;
+  outcome: string | null;
+};
+
+/**
+ * Lista de pagos derivada de leads con cashCollected > 0. La fecha de pago
+ * es `updatedAt` del lead (approx. cuando se registró el cash). Consumido
+ * por `/ventas/pagos`.
+ */
+export async function getPayments(filters?: { mes?: string; semana?: number; closer?: string }): Promise<{
+  payments: PaymentRow[];
+  totals: {
+    count: number;
+    sumCash: number;
+    sumContracted: number;
+    avgTicket: number;
+    pifCount: number;
+    pifCash: number;
+    setupMonthlyCount: number;
+    setupMonthlyCash: number;
+  };
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = [sql`CAST(${leads.cashCollected} AS DECIMAL(10,2)) > 0`];
+  if (filters?.mes) conditions.push(eq(leads.mes, filters.mes));
+  if (filters?.semana) conditions.push(eq(leads.semana, filters.semana));
+  if (filters?.closer) conditions.push(eq(leads.closer, filters.closer));
+  const where = and(...conditions);
+
+  const rows = await db.select({
+    id: leads.id,
+    nombre: leads.nombre,
+    closer: leads.closer,
+    productoTipo: leads.productoTipo,
+    cashCollected: leads.cashCollected,
+    contractedRevenue: leads.contractedRevenue,
+    facturado: leads.facturado,
+    setupFee: leads.setupFee,
+    recurrenciaMensual: leads.recurrenciaMensual,
+    fechaProximoCobro: leads.fechaProximoCobro,
+    fecha: leads.fecha,
+    mes: leads.mes,
+    semana: leads.semana,
+    outcome: leads.outcome,
+    updatedAt: leads.updatedAt,
+  })
+    .from(leads)
+    .where(where)
+    .orderBy(desc(leads.updatedAt));
+
+  const payments: PaymentRow[] = rows.map(r => ({
+    id: r.id,
+    nombre: r.nombre,
+    closer: r.closer,
+    productoTipo: r.productoTipo,
+    cashCollected: Number(r.cashCollected ?? 0),
+    contractedRevenue: Number(r.contractedRevenue ?? 0),
+    facturado: Number(r.facturado ?? 0),
+    setupFee: Number(r.setupFee ?? 0),
+    recurrenciaMensual: Number(r.recurrenciaMensual ?? 0),
+    fechaProximoCobro: r.fechaProximoCobro ? (r.fechaProximoCobro instanceof Date ? r.fechaProximoCobro.toISOString() : new Date(r.fechaProximoCobro).toISOString()) : null,
+    paymentDate: (r.updatedAt instanceof Date ? r.updatedAt : new Date(r.updatedAt)).toISOString(),
+    fecha: r.fecha ? (r.fecha instanceof Date ? r.fecha.toISOString() : new Date(r.fecha).toISOString()) : null,
+    mes: r.mes,
+    semana: r.semana,
+    outcome: r.outcome,
+  }));
+
+  const count = payments.length;
+  const sumCash = payments.reduce((acc, p) => acc + p.cashCollected, 0);
+  const sumContracted = payments.reduce((acc, p) => acc + p.contractedRevenue, 0);
+  const avgTicket = count > 0 ? sumCash / count : 0;
+  const pifPayments = payments.filter(p => p.productoTipo === "PIF");
+  const smPayments = payments.filter(p => p.productoTipo === "SETUP_MONTHLY");
+
+  return {
+    payments,
+    totals: {
+      count,
+      sumCash,
+      sumContracted,
+      avgTicket,
+      pifCount: pifPayments.length,
+      pifCash: pifPayments.reduce((a, p) => a + p.cashCollected, 0),
+      setupMonthlyCount: smPayments.length,
+      setupMonthlyCash: smPayments.reduce((a, p) => a + p.cashCollected, 0),
+    },
+  };
+}
+
+// ---------- Commission rate config shape ----------
+
+export type CommissionRates = {
+  default: { pif: number; setupMonthly: number };
+  byCloser: Record<string, { pif: number; setupMonthly: number }>;
+};
+
+const DEFAULT_COMMISSION_RATES: CommissionRates = {
+  default: { pif: 0.10, setupMonthly: 0.12 },
+  byCloser: {},
+};
+
+/**
+ * Read commission rates from system_config (key = "commissionRates").
+ * Falls back to 10% / 12% defaults if unset or malformed.
+ */
+export async function getCommissionRates(): Promise<CommissionRates> {
+  const raw = await getSystemConfig("commissionRates");
+  if (!raw) return DEFAULT_COMMISSION_RATES;
+  try {
+    const parsed = JSON.parse(raw);
+    // Light validation — require the shape we expect
+    if (
+      parsed &&
+      parsed.default && typeof parsed.default.pif === "number" && typeof parsed.default.setupMonthly === "number" &&
+      parsed.byCloser && typeof parsed.byCloser === "object"
+    ) {
+      return parsed as CommissionRates;
+    }
+    return DEFAULT_COMMISSION_RATES;
+  } catch {
+    return DEFAULT_COMMISSION_RATES;
+  }
+}
+
+export type CommissionRow = {
+  closer: string;
+  pifCount: number;
+  pifCash: number;
+  pifRate: number;
+  pifCommission: number;
+  smCount: number;
+  smCash: number;
+  smRate: number;
+  smCommission: number;
+  totalCommission: number;
+  totalCash: number;
+};
+
+/**
+ * Calcula comisiones por closer en el periodo. Agrupa los leads con
+ * cashCollected > 0, separa PIF vs SETUP_MONTHLY, y aplica la tasa
+ * configurada (override por closer si existe, si no la default).
+ * Consumido por `/ventas/comisiones`.
+ */
+export async function getCommissions(filters?: { mes?: string; semana?: number }): Promise<{
+  rows: CommissionRow[];
+  totals: {
+    pifCash: number;
+    pifCommission: number;
+    smCash: number;
+    smCommission: number;
+    totalCash: number;
+    totalCommission: number;
+  };
+  rates: CommissionRates;
+}> {
+  const rates = await getCommissionRates();
+  const { payments } = await getPayments(filters);
+
+  // Bucket by closer
+  const byCloser = new Map<string, PaymentRow[]>();
+  for (const p of payments) {
+    if (!p.closer) continue;
+    const list = byCloser.get(p.closer) ?? [];
+    list.push(p);
+    byCloser.set(p.closer, list);
+  }
+
+  const rows: CommissionRow[] = [];
+  for (const [closer, paysForCloser] of Array.from(byCloser.entries())) {
+    const rate = rates.byCloser[closer] ?? rates.default;
+    const pifs = paysForCloser.filter((p: PaymentRow) => p.productoTipo === "PIF");
+    const sms = paysForCloser.filter((p: PaymentRow) => p.productoTipo === "SETUP_MONTHLY");
+    const others = paysForCloser.filter((p: PaymentRow) => !p.productoTipo);
+
+    const pifCash = pifs.reduce((a: number, p: PaymentRow) => a + p.cashCollected, 0);
+    const smCash = sms.reduce((a: number, p: PaymentRow) => a + p.cashCollected, 0);
+    // Payments without productoTipo fall into PIF bucket by convention (single payment)
+    const otherCash = others.reduce((a: number, p: PaymentRow) => a + p.cashCollected, 0);
+    const pifCashTotal = pifCash + otherCash;
+
+    const pifCommission = pifCashTotal * rate.pif;
+    const smCommission = smCash * rate.setupMonthly;
+
+    rows.push({
+      closer,
+      pifCount: pifs.length + others.length,
+      pifCash: pifCashTotal,
+      pifRate: rate.pif,
+      pifCommission,
+      smCount: sms.length,
+      smCash,
+      smRate: rate.setupMonthly,
+      smCommission,
+      totalCommission: pifCommission + smCommission,
+      totalCash: pifCashTotal + smCash,
+    });
+  }
+
+  // Sort by total commission desc
+  rows.sort((a, b) => b.totalCommission - a.totalCommission);
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      pifCash: acc.pifCash + r.pifCash,
+      pifCommission: acc.pifCommission + r.pifCommission,
+      smCash: acc.smCash + r.smCash,
+      smCommission: acc.smCommission + r.smCommission,
+      totalCash: acc.totalCash + r.totalCash,
+      totalCommission: acc.totalCommission + r.totalCommission,
+    }),
+    { pifCash: 0, pifCommission: 0, smCash: 0, smCommission: 0, totalCash: 0, totalCommission: 0 }
+  );
+
+  return { rows, totals, rates };
+}

@@ -611,6 +611,52 @@ export const appRouter = router({
       .query(({ input }) => db.getContactoTimeline(input.leadId)),
   }),
 
+  // ==================== SALES (Payments + Commissions) ====================
+  sales: router({
+    /** Lista de pagos derivada (leads con cashCollected > 0) con totales */
+    payments: publicProcedure
+      .input(z.object({
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+        closer: z.string().optional(),
+      }).optional())
+      .query(({ input }) => db.getPayments(input ?? undefined)),
+
+    /** Comisiones calculadas por closer (PIF / Setup+Monthly x tasa configurada) */
+    commissions: publicProcedure
+      .input(z.object({
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+      }).optional())
+      .query(({ input }) => db.getCommissions(input ?? undefined)),
+
+    /** Tasas de comisión actuales (default + overrides por closer) */
+    getCommissionRates: publicProcedure
+      .query(() => db.getCommissionRates()),
+
+    /** Guarda la config de tasas de comisión — admin-only. El payload se serializa a JSON en system_config. */
+    setCommissionRates: adminProcedure
+      .input(z.object({
+        default: z.object({
+          pif: z.number().min(0).max(1),
+          setupMonthly: z.number().min(0).max(1),
+        }),
+        byCloser: z.record(z.string(), z.object({
+          pif: z.number().min(0).max(1),
+          setupMonthly: z.number().min(0).max(1),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.setSystemConfig({
+          key: "commissionRates",
+          value: JSON.stringify(input),
+          description: "Tasas de comisión por producto con overrides por closer",
+          updatedBy: ctx.user?.name ?? ctx.user?.email ?? undefined,
+        });
+        return { success: true };
+      }),
+  }),
+
   // ==================== CONSTRAINT DIAGNOSIS ====================
   diagnosis: router({
     run: publicProcedure
