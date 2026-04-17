@@ -121,6 +121,15 @@ export const leads = pgTable("leads", {
   utmCampaign: varchar("utmCampaign", { length: 255 }),
   utmContent: varchar("utmContent", { length: 255 }),
   utmTerm: varchar("utmTerm", { length: 255 }),
+  // Click IDs (useful when the query string is stripped but Meta/Google
+  // still append their own click identifier — lets us match back to ads
+  // via Conversions API even when utm_* fails)
+  fbclid: varchar("fbclid", { length: 500 }),
+  gclid: varchar("gclid", { length: 500 }),
+  /** Landing URL where the lead aterrizó (before conversion). */
+  landingUrl: text("landingUrl"),
+  /** Referrer header at time of webhook capture — populated when webhook carries it. */
+  attributionReferrer: varchar("attributionReferrer", { length: 500 }),
   // Scoring
   score: integer("score"),
   scoreLabel: scoreLabelEnum("scoreLabel"),

@@ -1332,6 +1332,19 @@ export const appRouter = router({
     webhookLog: publicProcedure
       .input(z.object({ id: z.number() }))
       .query(({ input }) => db.getWebhookLogById(input.id)),
+
+    /**
+     * Retroactively repair attribution for leads with missing UTMs by
+     * re-parsing their stored webhook_log payloads with the current parser.
+     * Never overwrites existing values. Safe to run as a batch — returns
+     * a per-lead result breakdown.
+     */
+    repairMissing: adminProcedure
+      .input(z.object({
+        leadId: z.number().optional(),
+        limit: z.number().min(1).max(200).default(50),
+      }).optional())
+      .mutation(({ input }) => db.repairMissingAttribution(input ?? {})),
   }),
 
   // ==================== SETTER WORK QUEUE ====================

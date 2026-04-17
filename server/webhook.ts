@@ -186,8 +186,15 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       || body.adset_name || body.adsetName
       || (req.query.utm_term as string) || null;
 
+    // Click IDs + landing URL — second vector for attribution when utm_* is stripped.
+    const fbclid = body.fbclid || body.fbc || body.fb_click_id || (req.query.fbclid as string) || null;
+    const gclid = body.gclid || body.gcl_id || (req.query.gclid as string) || null;
+    const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
+    const attributionReferrer = body.referrer || body.referer || (req.headers.referer as string) || null;
+
     console.log("[Webhook:Lead] Mapped -> nombre:", nombre, "| correo:", correo, "| telefono:", telefono, "| linkCRM:", linkCRM, "| facturacion:", facturacion);
     console.log("[Webhook:Lead] UTM -> source:", utmSource, "| medium:", utmMedium, "| campaign:", utmCampaign, "| content:", utmContent, "| term:", utmTerm);
+    console.log("[Webhook:Lead] Click IDs -> fbclid:", fbclid ? "present" : "absent", "| gclid:", gclid ? "present" : "absent");
 
     // Create initial webhook log entry
     try {
@@ -249,6 +256,11 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       if (utmCampaign && !existingLead.utmCampaign) updateData.utmCampaign = utmCampaign;
       if (utmContent && !existingLead.utmContent) updateData.utmContent = utmContent;
       if (utmTerm && !existingLead.utmTerm) updateData.utmTerm = utmTerm;
+      // Click IDs + landing are value-add even on reschedule: backfill if missing.
+      if (fbclid && !(existingLead as any).fbclid) updateData.fbclid = fbclid;
+      if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
+      if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
+      if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
 
       // Handle intro→demo conversion
       let action = "updated";
@@ -318,6 +330,11 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(utmContent ? { utmContent } : {}),
       ...(utmTerm ? { utmTerm } : {}),
+      // Click IDs + landing URL — backup vector for recovery.
+      ...(fbclid ? { fbclid } : {}),
+      ...(gclid ? { gclid } : {}),
+      ...(landingUrl ? { landingUrl } : {}),
+      ...(attributionReferrer ? { attributionReferrer } : {}),
     };
     // If it's an intro, also save the intro date
     if (tipoCita === "INTRO") {
@@ -868,6 +885,12 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
     const utmContent = body.utm_content || body.utmContent || body.UTM_Content || body.ad_name || (req.query.utm_content as string) || null;
     const utmTerm = body.utm_term || body.utmTerm || body.UTM_Term || body.adset_name || (req.query.utm_term as string) || null;
 
+    // Click-ID + landing fallback so we can recover attribution when utm_* is stripped
+    const fbclid = body.fbclid || body.fbc || (req.query.fbclid as string) || null;
+    const gclid = body.gclid || (req.query.gclid as string) || null;
+    const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
+    const attributionReferrer = body.referrer || body.http_referrer || body.httpReferrer || null;
+
     console.log(`[Webhook:Prospect] Mapped -> nombre: ${nombre} | correo: ${correo} | telefono: ${telefono}`);
 
     // Create webhook log
@@ -900,6 +923,11 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       if (pais && !existingLead.pais) updateData.pais = pais;
       if (instagram && !existingLead.instagram) updateData.instagram = instagram;
       if (rubro && !existingLead.rubro) updateData.rubro = rubro;
+      // Backfill click-IDs + landing so we can reconcile later
+      if (fbclid && !(existingLead as any).fbclid) updateData.fbclid = fbclid;
+      if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
+      if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
+      if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
 
       if (Object.keys(updateData).length > 0) {
         await db.updateLead(existingLead.id, updateData);
@@ -950,6 +978,10 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(utmContent ? { utmContent } : {}),
       ...(utmTerm ? { utmTerm } : {}),
+      ...(fbclid ? { fbclid } : {}),
+      ...(gclid ? { gclid } : {}),
+      ...(landingUrl ? { landingUrl } : {}),
+      ...(attributionReferrer ? { attributionReferrer } : {}),
     };
 
     const leadId = await db.createLead(leadData);
@@ -1301,6 +1333,46 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
     const email = subscriber?.email || payload.email || null;
     const phone = subscriber?.phone || payload.phone || null;
 
+    // --- Attribution from ManyChat ---
+    // ManyChat can forward ad attribution in three places:
+    //   1. payload.custom_fields (direct webhook setup in Flow Builder)
+    //   2. subscriber.custom_fields (after hydrating profile from API)
+    //   3. payload.ig_ref / payload.last_input_text (Instagram Ad-to-DM entry point)
+    // We normalize all of them into standard utm_* fields.
+    const rawCustomFields = (payload.custom_fields && typeof payload.custom_fields === "object")
+      ? payload.custom_fields
+      : (subscriber?.custom_fields && typeof subscriber.custom_fields === "object")
+        ? subscriber.custom_fields
+        : {};
+    const customFields: Record<string, any> = {};
+    // Normalize custom fields — ManyChat API returns either {name: value} or [{name, value}, ...]
+    if (Array.isArray(rawCustomFields)) {
+      for (const f of rawCustomFields) {
+        if (f && typeof f === "object" && f.name) customFields[f.name] = f.value;
+      }
+    } else {
+      Object.assign(customFields, rawCustomFields);
+    }
+    const igRef = payload.ig_ref || payload.entry_point || payload.last_input_text || (subscriber as any)?.ig_ref || null;
+    const hasAdRef = !!igRef || !!customFields.last_ad_id || !!customFields.utm_source;
+
+    const mcUtmSource = customFields.utm_source || (hasAdRef ? "instagram" : null);
+    const mcUtmMedium = customFields.utm_medium || (hasAdRef ? "social" : null);
+    const mcUtmCampaign = customFields.utm_campaign || customFields.campaign_name || null;
+    const mcUtmContent = customFields.utm_content || customFields.last_ad_id || customFields.ad_id || null;
+    const mcUtmTerm = customFields.utm_term || customFields.adset_id || customFields.adset_name || null;
+
+    // Instagram ads append `fbclid` when the user taps the ad before entering the DM —
+    // capture it so we can reconcile with Meta Ads data later.
+    const mcFbclid = customFields.fbclid || customFields.fbc || null;
+    const mcLandingUrl = customFields.landing_url || customFields.landingUrl || null;
+
+    if (mcUtmSource || mcUtmContent || igRef) {
+      console.log(`[Webhook:ManyChat] Attribution captured: source=${mcUtmSource} content=${mcUtmContent} ref=${igRef ? "yes" : "no"}`);
+    } else {
+      console.log(`[Webhook:ManyChat] No attribution in payload or custom_fields`);
+    }
+
     // Try to find existing lead by instagram handle
     let lead: any = null;
     if (igHandle) {
@@ -1325,10 +1397,21 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
       if (email && !lead.correo) updateData.correo = email;
       if (phone && !lead.telefono) updateData.telefono = phone;
 
+      // Backfill attribution only if the lead doesn't have it yet (never overwrite a known-good source)
+      if (mcUtmSource && !lead.utmSource) updateData.utmSource = mcUtmSource;
+      if (mcUtmMedium && !lead.utmMedium) updateData.utmMedium = mcUtmMedium;
+      if (mcUtmCampaign && !lead.utmCampaign) updateData.utmCampaign = mcUtmCampaign;
+      if (mcUtmContent && !lead.utmContent) updateData.utmContent = mcUtmContent;
+      if (mcUtmTerm && !lead.utmTerm) updateData.utmTerm = mcUtmTerm;
+      if (mcFbclid && !(lead as any).fbclid) updateData.fbclid = mcFbclid;
+      if (mcLandingUrl && !(lead as any).landingUrl) updateData.landingUrl = mcLandingUrl;
+
       await db.updateLead(lead.id, updateData);
       console.log(`[Webhook:ManyChat] Updated existing lead #${lead.id} with manychatSubscriberId=${subscriberId}`);
     } else {
       // Create new lead (createLead returns the numeric id)
+      // Origen stays INSTAGRAM — that's how we differentiate IG-DM leads from direct ad clicks.
+      // The UTMs let us drill into WHICH ad drove the DM within the Instagram funnel.
       const newLeadId = await db.createLead({
         nombre: nombre || igHandle || `MC-${subscriberId}`,
         correo: email || null,
@@ -1339,6 +1422,13 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
         igFunnelStage: "NUEVO_SEGUIDOR",
         categoria: "LEAD",
         manychatSubscriberId: String(subscriberId),
+        ...(mcUtmSource ? { utmSource: mcUtmSource } : {}),
+        ...(mcUtmMedium ? { utmMedium: mcUtmMedium } : {}),
+        ...(mcUtmCampaign ? { utmCampaign: mcUtmCampaign } : {}),
+        ...(mcUtmContent ? { utmContent: mcUtmContent } : {}),
+        ...(mcUtmTerm ? { utmTerm: mcUtmTerm } : {}),
+        ...(mcFbclid ? { fbclid: mcFbclid } : {}),
+        ...(mcLandingUrl ? { landingUrl: mcLandingUrl } : {}),
       } as any);
 
       lead = { id: newLeadId };

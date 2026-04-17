@@ -2613,6 +2613,294 @@ export async function getWebhookLogById(id: number) {
   return rows[0] ?? null;
 }
 
+// ==================== ATTRIBUTION REPAIR ====================
+//
+// Retroactively recovers attribution fields for leads that came in with
+// missing/empty UTMs, by re-parsing the original `webhook_log.rawPayload`.
+//
+// Why this exists: the live webhook parsers evolved — earlier versions missed
+// some aliases (e.g. `ad_name`→utmContent, ManyChat `custom_fields.last_ad_id`,
+// `fbclid` as fallback identifier). For any lead whose payload was captured in
+// full we can now re-run the improved parser and fill in the gaps without
+// losing anything (only NULL/empty fields are touched; known-good values are
+// never overwritten).
+
+interface ExtractedAttribution {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  utmTerm: string | null;
+  fbclid: string | null;
+  gclid: string | null;
+  landingUrl: string | null;
+  attributionReferrer: string | null;
+}
+
+/**
+ * Normalize ManyChat custom_fields which arrive as either:
+ *   {name: value}  (webhook direct payload)
+ *   [{name, value}, ...]  (API response)
+ */
+function normalizeManychatCustomFields(raw: any): Record<string, any> {
+  if (!raw || typeof raw !== "object") return {};
+  if (Array.isArray(raw)) {
+    const out: Record<string, any> = {};
+    for (const f of raw) {
+      if (f && typeof f === "object" && f.name != null) out[String(f.name)] = f.value;
+    }
+    return out;
+  }
+  return raw;
+}
+
+/**
+ * Walk a potentially-nested webhook payload and pull out any attribution data
+ * we know how to recognize. Mirrors the logic in /api/webhook/{lead,prospect,manychat}
+ * so that rebuilding a lead from its stored rawPayload yields the same result
+ * the live webhook would today.
+ *
+ * Returns nulls for anything not found; caller decides whether to overwrite.
+ */
+function extractAttributionFromPayload(payload: any): ExtractedAttribution {
+  const out: ExtractedAttribution = {
+    utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null, utmTerm: null,
+    fbclid: null, gclid: null, landingUrl: null, attributionReferrer: null,
+  };
+  if (!payload || typeof payload !== "object") return out;
+
+  // Flatten one level of nested objects like {customData: {...}, contact: {...}}
+  // so we can look up keys uniformly. We keep the original at the top and
+  // layer flatter versions underneath.
+  const merged: Record<string, any> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "object" && !Array.isArray(v)) {
+      for (const [nk, nv] of Object.entries(v as Record<string, any>)) {
+        if (typeof nv !== "object" || nv === null) {
+          if (merged[nk] === undefined) merged[nk] = nv;
+        }
+      }
+    }
+    // Always keep the root-level value — it wins over nested.
+    merged[k] = v;
+  }
+
+  const pick = (...keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = merged[k];
+      if (v != null && String(v).trim() !== "") return String(v);
+    }
+    return null;
+  };
+
+  // Straight UTM keys (all known aliases from the live parsers)
+  out.utmSource = pick("utm_source", "utmSource", "UTM_Source");
+  out.utmMedium = pick("utm_medium", "utmMedium", "UTM_Medium");
+  out.utmCampaign = pick("utm_campaign", "utmCampaign", "UTM_Campaign", "campaign_name");
+  out.utmContent = pick("utm_content", "utmContent", "UTM_Content", "ad_name");
+  out.utmTerm = pick("utm_term", "utmTerm", "UTM_Term", "adset_name");
+
+  out.fbclid = pick("fbclid", "fbc");
+  out.gclid = pick("gclid");
+  out.landingUrl = pick("landing_url", "landingUrl", "page_url", "pageUrl");
+  out.attributionReferrer = pick("referrer", "http_referrer", "httpReferrer");
+
+  // --- ManyChat-specific fallback ---
+  const customFields = normalizeManychatCustomFields(
+    payload.custom_fields ?? payload.subscriber?.custom_fields ?? null,
+  );
+  const igRef = payload.ig_ref || payload.entry_point || payload.last_input_text
+    || payload.subscriber?.ig_ref || null;
+  const hasAdRef = !!igRef || !!customFields.last_ad_id || !!customFields.utm_source
+    || !!customFields.ad_id || !!customFields.utm_content;
+
+  if (!out.utmSource && customFields.utm_source) out.utmSource = String(customFields.utm_source);
+  if (!out.utmSource && hasAdRef) out.utmSource = "instagram";
+  if (!out.utmMedium && customFields.utm_medium) out.utmMedium = String(customFields.utm_medium);
+  if (!out.utmMedium && hasAdRef) out.utmMedium = "social";
+  if (!out.utmCampaign && (customFields.utm_campaign || customFields.campaign_name)) {
+    out.utmCampaign = String(customFields.utm_campaign || customFields.campaign_name);
+  }
+  if (!out.utmContent && (customFields.utm_content || customFields.last_ad_id || customFields.ad_id)) {
+    out.utmContent = String(customFields.utm_content || customFields.last_ad_id || customFields.ad_id);
+  }
+  if (!out.utmTerm && (customFields.utm_term || customFields.adset_id || customFields.adset_name)) {
+    out.utmTerm = String(customFields.utm_term || customFields.adset_id || customFields.adset_name);
+  }
+  if (!out.fbclid && (customFields.fbclid || customFields.fbc)) {
+    out.fbclid = String(customFields.fbclid || customFields.fbc);
+  }
+  if (!out.landingUrl && (customFields.landing_url || customFields.landingUrl)) {
+    out.landingUrl = String(customFields.landing_url || customFields.landingUrl);
+  }
+
+  return out;
+}
+
+export interface RepairAttributionResult {
+  leadId: number;
+  repaired: boolean;
+  fieldsSet: string[];
+  reason: string;
+  source?: string | null;   // webhook endpoint where the data came from, if any
+}
+
+/**
+ * Re-parse stored webhook_logs for leads missing attribution and backfill
+ * nullable/empty UTM + click-id fields. Never overwrites existing values.
+ *
+ * Modes:
+ *   - If `leadId` provided: attempt repair for that lead only.
+ *   - Otherwise: scan up to `limit` most-recent leads with missing utmSource/utmCampaign.
+ *
+ * Returns one result per candidate lead. `repaired=false` is expected when the
+ * original payload truly had no attribution (e.g. direct prospect form, manual
+ * entry) — the UI uses `reason` to explain why.
+ */
+export async function repairMissingAttribution(params: { leadId?: number; limit?: number } = {}): Promise<RepairAttributionResult[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = params.limit ?? 50;
+
+  // Step 1: pick candidates
+  const baseQuery = db.select({
+    id: leads.id,
+    utmSource: leads.utmSource,
+    utmMedium: leads.utmMedium,
+    utmCampaign: leads.utmCampaign,
+    utmContent: leads.utmContent,
+    utmTerm: leads.utmTerm,
+    fbclid: leads.fbclid,
+    gclid: leads.gclid,
+    landingUrl: leads.landingUrl,
+    attributionReferrer: leads.attributionReferrer,
+  }).from(leads);
+
+  const candidates = params.leadId
+    ? await baseQuery.where(eq(leads.id, params.leadId)).limit(1)
+    : await baseQuery
+        .where(and(
+          sql`(${leads.utmSource} IS NULL OR ${leads.utmSource} = '')`,
+          sql`(${leads.utmCampaign} IS NULL OR ${leads.utmCampaign} = '')`,
+        ))
+        .orderBy(desc(leads.createdAt))
+        .limit(limit);
+
+  if (candidates.length === 0) return [];
+
+  // Step 2: pull all webhook_logs for those leads in one query
+  const leadIds = candidates.map((c) => c.id);
+  const logs = await db.select({
+    id: webhookLogs.id,
+    leadId: webhookLogs.leadId,
+    endpoint: webhookLogs.endpoint,
+    rawPayload: webhookLogs.rawPayload,
+    createdAt: webhookLogs.createdAt,
+  })
+    .from(webhookLogs)
+    .where(and(inArray(webhookLogs.leadId, leadIds), isNotNull(webhookLogs.rawPayload)))
+    .orderBy(desc(webhookLogs.createdAt));
+
+  const logsByLead = new Map<number, Array<{ endpoint: string | null; rawPayload: string }>>();
+  for (const log of logs) {
+    if (log.leadId == null || !log.rawPayload) continue;
+    const list = logsByLead.get(log.leadId) ?? [];
+    list.push({ endpoint: log.endpoint ?? null, rawPayload: log.rawPayload });
+    logsByLead.set(log.leadId, list);
+  }
+
+  const results: RepairAttributionResult[] = [];
+  for (const lead of candidates) {
+    const leadLogs = logsByLead.get(lead.id) ?? [];
+    if (leadLogs.length === 0) {
+      results.push({
+        leadId: lead.id,
+        repaired: false,
+        fieldsSet: [],
+        reason: "No webhook_log with rawPayload (probably manual entry or ManyChat before logging was enabled).",
+      });
+      continue;
+    }
+
+    // Try each stored payload. We prefer the first (most recent) payload
+    // that surfaces any attribution — that's the one that drove the latest
+    // webhook update for this lead.
+    let extracted: ExtractedAttribution | null = null;
+    let extractedEndpoint: string | null = null;
+    for (const log of leadLogs) {
+      let parsed: any;
+      try {
+        parsed = JSON.parse(log.rawPayload);
+      } catch {
+        continue;
+      }
+      const e = extractAttributionFromPayload(parsed);
+      const hasAny = e.utmSource || e.utmMedium || e.utmCampaign || e.utmContent
+                  || e.utmTerm || e.fbclid || e.gclid || e.landingUrl;
+      if (hasAny) {
+        extracted = e;
+        extractedEndpoint = log.endpoint;
+        break;
+      }
+    }
+
+    if (!extracted) {
+      results.push({
+        leadId: lead.id,
+        repaired: false,
+        fieldsSet: [],
+        reason: `Scanned ${leadLogs.length} payload(s) — no attribution data found.`,
+        source: leadLogs[0]?.endpoint ?? null,
+      });
+      continue;
+    }
+
+    // Only fill empty fields — never overwrite
+    const updateData: Record<string, any> = {};
+    const fieldsSet: string[] = [];
+    const setIfEmpty = (key: keyof ExtractedAttribution, current: string | null) => {
+      const val = extracted![key];
+      if (val && (current == null || current === "")) {
+        updateData[key] = val;
+        fieldsSet.push(key);
+      }
+    };
+    setIfEmpty("utmSource", lead.utmSource);
+    setIfEmpty("utmMedium", lead.utmMedium);
+    setIfEmpty("utmCampaign", lead.utmCampaign);
+    setIfEmpty("utmContent", lead.utmContent);
+    setIfEmpty("utmTerm", lead.utmTerm);
+    setIfEmpty("fbclid", lead.fbclid);
+    setIfEmpty("gclid", lead.gclid);
+    setIfEmpty("landingUrl", lead.landingUrl);
+    setIfEmpty("attributionReferrer", lead.attributionReferrer);
+
+    if (fieldsSet.length === 0) {
+      results.push({
+        leadId: lead.id,
+        repaired: false,
+        fieldsSet: [],
+        reason: "Attribution found in payload but lead already has these fields.",
+        source: extractedEndpoint,
+      });
+      continue;
+    }
+
+    updateData.updatedAt = new Date();
+    await db.update(leads).set(updateData).where(eq(leads.id, lead.id));
+    results.push({
+      leadId: lead.id,
+      repaired: true,
+      fieldsSet,
+      reason: `Filled ${fieldsSet.length} field(s) from ${extractedEndpoint ?? "stored payload"}.`,
+      source: extractedEndpoint,
+    });
+  }
+
+  return results;
+}
+
 /**
  * Get daily spend trend for a date range (for charts).
  */

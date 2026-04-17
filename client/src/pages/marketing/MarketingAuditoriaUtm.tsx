@@ -39,6 +39,8 @@ import {
   ExternalLink,
   FileSearch,
   RefreshCw,
+  Wrench,
+  Loader2,
 } from "lucide-react";
 
 type RangeKey = "7d" | "30d" | "90d" | "ytd" | "all";
@@ -103,6 +105,46 @@ export default function MarketingAuditoriaUtm() {
   }, [completeness.data]);
 
   const [inspectLogId, setInspectLogId] = useState<number | null>(null);
+  const [pendingRepairId, setPendingRepairId] = useState<number | null>(null);
+
+  // Re-parse a lead's stored webhook_log payloads with the current parser,
+  // filling in any missing UTM / click-id fields. Safe — never overwrites.
+  const repairMutation = trpc.attribution.repairMissing.useMutation({
+    onSuccess: (results: any) => {
+      setPendingRepairId(null);
+      const list = Array.isArray(results) ? results : [];
+      const repaired = list.filter((r: any) => r.repaired);
+      if (repaired.length === 0) {
+        const reason = list[0]?.reason ?? "Sin datos recuperables";
+        toast.info(`Sin cambios: ${reason}`);
+      } else {
+        const totalFields = repaired.reduce((s: number, r: any) => s + (r.fieldsSet?.length ?? 0), 0);
+        toast.success(`Reparados ${repaired.length} lead(s) · ${totalFields} campos rellenados`);
+        missing.refetch();
+        completeness.refetch();
+      }
+    },
+    onError: (e: any) => {
+      setPendingRepairId(null);
+      toast.error(`Error reparando: ${e.message}`);
+    },
+  });
+
+  const repairBatchMutation = trpc.attribution.repairMissing.useMutation({
+    onSuccess: (results: any) => {
+      const list = Array.isArray(results) ? results : [];
+      const repaired = list.filter((r: any) => r.repaired);
+      const totalFields = repaired.reduce((s: number, r: any) => s + (r.fieldsSet?.length ?? 0), 0);
+      if (repaired.length === 0) {
+        toast.info("Nada por reparar — todos los leads del batch ya tenían UTMs o sin payload recuperable.");
+      } else {
+        toast.success(`Batch: ${repaired.length} leads reparados · ${totalFields} campos`);
+      }
+      missing.refetch();
+      completeness.refetch();
+    },
+    onError: (e: any) => toast.error(`Batch falló: ${e.message}`),
+  });
 
   return (
     <div className="space-y-5 p-4 md:p-6">
@@ -135,6 +177,20 @@ export default function MarketingAuditoriaUtm() {
             }}
           >
             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refrescar
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={repairBatchMutation.isPending}
+            onClick={() => repairBatchMutation.mutate({ limit: 50 })}
+            title="Re-parsea los payloads almacenados de los 50 leads más recientes sin atribución"
+          >
+            {repairBatchMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <Wrench className="h-3.5 w-3.5 mr-1" />
+            )}
+            Reparar últimos 50
           </Button>
         </div>
       </div>
@@ -291,13 +347,34 @@ export default function MarketingAuditoriaUtm() {
                         })}
                       </td>
                       <td className="py-2 px-2 text-right">
-                        {l.webhookLogId && l.hasRawPayload ? (
-                          <Button size="sm" variant="outline" onClick={() => setInspectLogId(l.webhookLogId)}>
-                            Ver payload
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground/50">sin payload</span>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {l.webhookLogId && l.hasRawPayload ? (
+                            <Button size="sm" variant="outline" onClick={() => setInspectLogId(l.webhookLogId)}>
+                              Ver payload
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50">sin payload</span>
+                          )}
+                          {l.hasRawPayload ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={repairMutation.isPending && pendingRepairId === l.leadId}
+                              onClick={() => {
+                                setPendingRepairId(l.leadId);
+                                repairMutation.mutate({ leadId: l.leadId });
+                              }}
+                              title="Re-parsea el payload crudo con el parser actual"
+                            >
+                              {repairMutation.isPending && pendingRepairId === l.leadId ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Wrench className="h-3 w-3" />
+                              )}
+                              <span className="ml-1 hidden md:inline">Reparar</span>
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
