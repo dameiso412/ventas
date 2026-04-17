@@ -380,49 +380,58 @@ const CREATIVE_FIELDS = [
 ].join(",");
 
 /**
- * Chunked + retried batch fetch for ad creatives.
+ * Fetch ad creatives from the Meta Ads account.
  *
- * Uses Meta's `?ids=` batch endpoint (max 50 per request) so we don't fan out
- * to N separate calls per sync. Does a second pass to expand video source URLs
- * (Graph returns only `video_id`, we need the mp4 to render `<video src>`).
+ * Uses `/{accountId}/ads?fields=id,creative{...}` with cursor pagination —
+ * the standard account-level ads endpoint. This is more reliable than the
+ * `?ids=` batch lookup, which silently omits the `creative` expansion for
+ * many ad types.
  *
- * Returns one `ParsedCreative` per adId we successfully fetched. Ads that
- * error out individually are skipped rather than failing the whole batch.
+ * Optional `adIds` set: when provided, only ads whose IDs are in that set are
+ * processed (so we sync just what syncStructure already fetched). When omitted,
+ * all ads in the account are fetched.
+ *
+ * Does a second pass to expand video source URLs (Graph returns only
+ * `video_id`; we need the mp4 to render `<video src>`).
  */
-export async function fetchAdCreatives(adIds: string[]): Promise<ParsedCreative[]> {
-  if (!adIds.length) return [];
-
-  // Dedupe + chunk into batches of 50 (Meta's cap on ?ids=)
-  const unique = Array.from(new Set(adIds.filter(Boolean)));
-  const chunks: string[][] = [];
-  for (let i = 0; i < unique.length; i += 50) {
-    chunks.push(unique.slice(i, i + 50));
-  }
+export async function fetchAdCreatives(adIds?: string[]): Promise<ParsedCreative[]> {
+  const accountId = ENV.metaAdAccountId;
+  const adIdSet = adIds && adIds.length ? new Set(adIds.filter(Boolean)) : null;
 
   const creatives: ParsedCreative[] = [];
   const videoIds = new Set<string>();
 
-  for (const chunk of chunks) {
-    type AdBatchResponse = Record<string, { id: string; creative?: MetaCreative; error?: { message: string } }>;
-    let batch: AdBatchResponse;
+  let after: string | undefined;
+  // Hard cap: 20 pages × 100 ads = 2 000 ads — enough for any realistic account.
+  for (let page = 0; page < 20; page++) {
+    const params: Record<string, string> = {
+      fields: `id,creative{${CREATIVE_FIELDS}}`,
+      limit: "100",
+    };
+    if (after) params.after = after;
+
+    let resp: MetaPaginatedResponse<{ id: string; creative?: MetaCreative }>;
     try {
-      batch = await metaFetchWithRetry<AdBatchResponse>("", {
-        ids: chunk.join(","),
-        fields: `creative{${CREATIVE_FIELDS}}`,
-      });
+      resp = await metaFetchWithRetry(`/${accountId}/ads`, params);
     } catch (err: any) {
-      console.error(`[MetaAds:fetchAdCreatives] chunk failed, skipping:`, err?.message);
-      continue;
+      console.error(`[MetaAds:fetchAdCreatives] page ${page} failed:`, err?.message);
+      break;
     }
 
-    for (const adId of chunk) {
-      const entry = batch[adId];
-      if (!entry || entry.error || !entry.creative) continue;
+    for (const ad of resp.data) {
+      // Skip ads not in the requested set (when filtering by pre-fetched adIds).
+      if (adIdSet && !adIdSet.has(ad.id)) continue;
+      if (!ad.creative) continue;
 
-      const parsed = parseCreative(adId, entry.creative);
+      const parsed = parseCreative(ad.id, ad.creative);
       creatives.push(parsed);
       if (parsed.videoId) videoIds.add(parsed.videoId);
     }
+
+    // Paginate: stop when there's no next cursor or the page is empty.
+    const nextCursor = resp.paging?.cursors?.after;
+    if (!nextCursor || !resp.paging?.next || resp.data.length === 0) break;
+    after = nextCursor;
   }
 
   // Second pass: expand video metadata so we have a playable source URL.
