@@ -15,6 +15,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recha
 import { Megaphone, UsersRound, Globe, Instagram, Info } from "lucide-react";
 import { MESES, getCurrentMes, getCurrentSemana } from "@shared/period";
 import { useChartTheme } from "@/hooks/useChartTheme";
+import AdCreativePreview from "@/components/AdCreativePreview";
 
 const ORIGEN_COLORS: Record<string, string> = {
   ADS: "#3b82f6",
@@ -56,6 +57,20 @@ export default function DashboardFuentes() {
   }), [mes, semana]);
 
   const { data, isLoading } = trpc.dashboard.sourceBreakdown.useQuery(filters);
+
+  // Batch-fetch creatives for every numeric utm_content in the breakdown so the
+  // ads table can render a thumbnail column without firing one query per row.
+  const adIds = useMemo(() => {
+    const ids = (data?.adsBreakdown ?? [])
+      .map((r) => String(r.utmContent ?? "").trim())
+      .filter((v) => /^\d{6,}$/.test(v));
+    return Array.from(new Set(ids));
+  }, [data?.adsBreakdown]);
+  const creativesQuery = trpc.metaAds.creativesByAdIds.useQuery(
+    { adIds },
+    { enabled: adIds.length > 0, staleTime: 10 * 60_000 }
+  );
+  const creativesMap = (creativesQuery.data ?? {}) as Record<string, any>;
 
   const totalLeads = data?.byOrigen.reduce((sum, r) => sum + r.count, 0) ?? 0;
   const pieData = data?.byOrigen.map(r => ({
@@ -252,6 +267,7 @@ export default function DashboardFuentes() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/50 text-left text-muted-foreground">
+                    <th className="py-2 px-2 font-medium w-14">Creativo</th>
                     <th className="py-2 px-2 font-medium">Campaña</th>
                     <th className="py-2 px-2 font-medium">Adset</th>
                     <th className="py-2 px-2 font-medium">Ad</th>
@@ -265,8 +281,19 @@ export default function DashboardFuentes() {
                 <tbody>
                   {data.adsBreakdown.map((r, i) => {
                     const closeRate = r.leads > 0 ? (r.ventas / r.leads) * 100 : 0;
+                    const utmContent = String(r.utmContent ?? "").trim();
+                    const adId = /^\d{6,}$/.test(utmContent) ? utmContent : null;
+                    const creative = adId ? creativesMap[adId] : null;
                     return (
                       <tr key={i} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                        <td className="py-2 px-2">
+                          <AdCreativePreview
+                            adId={adId}
+                            preloaded={creative ?? null}
+                            adName={r.utmCampaign}
+                            variant="compact"
+                          />
+                        </td>
                         <td className="py-2 px-2 font-medium truncate max-w-[200px]">{r.utmCampaign || "—"}</td>
                         <td className="py-2 px-2 text-muted-foreground truncate max-w-[150px]">{r.utmTerm || "—"}</td>
                         <td className="py-2 px-2 text-muted-foreground truncate max-w-[150px]">{r.utmContent || "—"}</td>

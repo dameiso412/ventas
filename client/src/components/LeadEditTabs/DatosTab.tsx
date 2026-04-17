@@ -2,7 +2,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProspectProfile } from "@/components/ProspectProfile";
-import { ExternalLink, Clock } from "lucide-react";
+import AdCreativePreview from "@/components/AdCreativePreview";
+import { ExternalLink, Clock, Target } from "lucide-react";
 import { ORIGENES, type LeadForm } from "./leadEditState";
 
 interface DatosTabProps {
@@ -121,12 +122,71 @@ export function DatosTab({ lead, form, setField }: DatosTabProps) {
         )}
       </div>
 
+      {/* Atribución del anuncio — muestra creativo (video/imagen) cuando utm_content mapea a un Meta adId */}
+      <LeadAttributionSection lead={lead} />
+
       {/* ProspectProfile — formulario diagnóstico + cita agendada + UTMs (read-only, expandible) */}
       <div>
         <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-2">
           Información del prospecto
         </p>
         <ProspectProfile leadId={lead.id} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Show the Meta ad creative that originated this lead, when `utm_content`
+ * matches the Meta template `{{ad.id}}`. Gracefully degrades to UTM-only text
+ * when the match fails (manual leads, organic, corrupted utm_content, etc.).
+ */
+function LeadAttributionSection({ lead }: { lead: any }) {
+  const hasAnyAttribution = Boolean(
+    lead.utmSource || lead.utmMedium || lead.utmCampaign || lead.utmContent || lead.utmTerm
+  );
+  if (!hasAnyAttribution) return null;
+
+  // Convention from meta-ads.ts#getRecommendedUtmTags: utm_content={{ad.id}}.
+  // Meta ad IDs are numeric strings; treat anything numeric as a candidate.
+  const adId = lead.utmContent && /^\d{6,}$/.test(String(lead.utmContent).trim())
+    ? String(lead.utmContent).trim()
+    : null;
+
+  return (
+    <div>
+      <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-2 flex items-center gap-1.5">
+        <Target className="h-3 w-3" /> Atribución del anuncio
+      </p>
+      <div className="rounded-md border border-border/30 bg-muted/10 p-3 space-y-2">
+        {adId ? (
+          <AdCreativePreview adId={adId} variant="inline" adName={lead.utmCampaign} />
+        ) : (
+          <div className="rounded-md border border-dashed border-border/50 p-3 text-[11px] text-muted-foreground">
+            No hay creativo asociado — <span className="font-mono">utm_content</span>{" "}
+            {lead.utmContent ? (
+              <>= <span className="font-mono">{lead.utmContent}</span> no es un ad ID numérico.</>
+            ) : (
+              <>está vacío.</>
+            )}
+          </div>
+        )}
+        <dl className="grid grid-cols-2 md:grid-cols-5 gap-2 text-[10px]">
+          {[
+            ["Source", lead.utmSource],
+            ["Medium", lead.utmMedium],
+            ["Campaign", lead.utmCampaign],
+            ["Content", lead.utmContent],
+            ["Term", lead.utmTerm],
+          ].map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="uppercase tracking-wider text-muted-foreground/70">{label}</dt>
+              <dd className="truncate text-foreground/80 font-mono" title={value || undefined}>
+                {value || <span className="text-muted-foreground/40">—</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </div>
   );

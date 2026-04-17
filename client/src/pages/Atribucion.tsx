@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import AdCreativePreview from "@/components/AdCreativePreview";
 import { toast } from "sonner";
 import {
   RefreshCw,
@@ -792,6 +793,19 @@ function CampaignRow({
   adMetrics?: any[];
   adLoading?: boolean;
 }) {
+  // Batch-fetch creative thumbnails for the currently expanded adset. Keeps
+  // the request count down to O(1) per drill-down regardless of how many ads
+  // it contains, and tRPC cache means re-opening the same adset is free.
+  const adIds = useMemo(
+    () => (adMetrics ?? []).map((a: any) => a.adId).filter(Boolean) as string[],
+    [adMetrics]
+  );
+  const creativesQuery = trpc.metaAds.creativesByAdIds.useQuery(
+    { adIds },
+    { enabled: adIds.length > 0, staleTime: 10 * 60_000 }
+  );
+  const creativesMap = (creativesQuery.data ?? {}) as Record<string, any>;
+
   return (
     <>
       <tr
@@ -886,6 +900,7 @@ function CampaignRow({
                       const adCpc = adClicks > 0 ? adSpend / adClicks : 0;
                       const adCpl = adLeads > 0 ? adSpend / adLeads : 0;
 
+                      const creative = ad.adId ? creativesMap[ad.adId] : null;
                       return (
                         <tr
                           key={`ad-${ad.adId}`}
@@ -893,9 +908,17 @@ function CampaignRow({
                         >
                           <td className="py-1.5 px-3 pl-12"></td>
                           <td className="py-1.5 px-3">
-                            <p className="text-foreground/60 text-[11px] truncate max-w-[260px] pl-8">
-                              ↳ {ad.adName ?? "Sin nombre"}
-                            </p>
+                            <div className="flex items-center gap-2 pl-8">
+                              <AdCreativePreview
+                                adId={ad.adId ?? null}
+                                preloaded={creative ?? null}
+                                adName={ad.adName}
+                                variant="compact"
+                              />
+                              <p className="text-foreground/60 text-[11px] truncate max-w-[220px]">
+                                ↳ {ad.adName ?? "Sin nombre"}
+                              </p>
+                            </div>
                           </td>
                           <td className="text-right py-1.5 px-3 text-[11px] text-red-400/60">{formatCurrency(adSpend)}</td>
                           <td className="text-right py-1.5 px-3 text-[11px]">{formatNumber(adImpressions)}</td>
