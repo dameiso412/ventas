@@ -2446,6 +2446,173 @@ export async function getLeadCountByUtmCampaign(dateFrom?: string, dateTo?: stri
     .groupBy(leads.utmCampaign);
 }
 
+// ==================== UTM AUDIT / COMPLETENESS ====================
+
+export interface UtmCompletenessRow {
+  origen: string;
+  total: number;
+  hasSource: number;
+  hasMedium: number;
+  hasCampaign: number;
+  hasContent: number;
+  hasTerm: number;
+  completelyMissing: number;
+}
+
+/**
+ * Compute UTM completeness per `origen` for the date range. Lets the audit
+ * panel quantify "what % of leads from each source carry each UTM level" —
+ * prerequisite for fixing the fuga de atribución because we can't improve
+ * what we don't measure.
+ */
+export async function getUtmCompleteness(filters?: { dateFrom?: string; dateTo?: string }): Promise<UtmCompletenessRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (filters?.dateFrom) conditions.push(gte(leads.createdAt, new Date(filters.dateFrom)));
+  if (filters?.dateTo) conditions.push(lte(leads.createdAt, new Date(filters.dateTo)));
+
+  const rows = await db.select({
+    origen: leads.origen,
+    total: sql<number>`COUNT(*)::int`,
+    hasSource: sql<number>`SUM(CASE WHEN ${leads.utmSource} IS NOT NULL AND ${leads.utmSource} != '' THEN 1 ELSE 0 END)::int`,
+    hasMedium: sql<number>`SUM(CASE WHEN ${leads.utmMedium} IS NOT NULL AND ${leads.utmMedium} != '' THEN 1 ELSE 0 END)::int`,
+    hasCampaign: sql<number>`SUM(CASE WHEN ${leads.utmCampaign} IS NOT NULL AND ${leads.utmCampaign} != '' THEN 1 ELSE 0 END)::int`,
+    hasContent: sql<number>`SUM(CASE WHEN ${leads.utmContent} IS NOT NULL AND ${leads.utmContent} != '' THEN 1 ELSE 0 END)::int`,
+    hasTerm: sql<number>`SUM(CASE WHEN ${leads.utmTerm} IS NOT NULL AND ${leads.utmTerm} != '' THEN 1 ELSE 0 END)::int`,
+    completelyMissing: sql<number>`SUM(CASE WHEN (${leads.utmSource} IS NULL OR ${leads.utmSource} = '') AND (${leads.utmCampaign} IS NULL OR ${leads.utmCampaign} = '') THEN 1 ELSE 0 END)::int`,
+  })
+    .from(leads)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(leads.origen)
+    .orderBy(desc(sql<number>`COUNT(*)`));
+
+  return rows.map((r) => ({
+    origen: r.origen ?? "(sin origen)",
+    total: Number(r.total ?? 0),
+    hasSource: Number(r.hasSource ?? 0),
+    hasMedium: Number(r.hasMedium ?? 0),
+    hasCampaign: Number(r.hasCampaign ?? 0),
+    hasContent: Number(r.hasContent ?? 0),
+    hasTerm: Number(r.hasTerm ?? 0),
+    completelyMissing: Number(r.completelyMissing ?? 0),
+  }));
+}
+
+export interface LeadWithMissingUtm {
+  leadId: number;
+  nombre: string | null;
+  correo: string | null;
+  telefono: string | null;
+  origen: string | null;
+  fecha: Date | null;
+  createdAt: Date;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  utmTerm: string | null;
+  webhookLogId: number | null;
+  webhookEndpoint: string | null;
+  hasRawPayload: boolean;
+}
+
+/**
+ * List up to `limit` recent leads that have no UTM attribution — the
+ * "unrecoverable unless we dig into the raw webhook payload" bucket.
+ * Joined to `webhook_logs` by leadId so the UI can show "view payload" for
+ * forensic inspection and retroactive repair.
+ */
+export async function getLeadsWithMissingUtm(params: { limit?: number; dateFrom?: string; dateTo?: string } = {}): Promise<LeadWithMissingUtm[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = params.limit ?? 20;
+  const conditions: any[] = [
+    sql`(${leads.utmSource} IS NULL OR ${leads.utmSource} = '')`,
+    sql`(${leads.utmCampaign} IS NULL OR ${leads.utmCampaign} = '')`,
+  ];
+  if (params.dateFrom) conditions.push(gte(leads.createdAt, new Date(params.dateFrom)));
+  if (params.dateTo) conditions.push(lte(leads.createdAt, new Date(params.dateTo)));
+
+  const rows = await db.select({
+    leadId: leads.id,
+    nombre: leads.nombre,
+    correo: leads.correo,
+    telefono: leads.telefono,
+    origen: leads.origen,
+    fecha: leads.fecha,
+    createdAt: leads.createdAt,
+    utmSource: leads.utmSource,
+    utmMedium: leads.utmMedium,
+    utmCampaign: leads.utmCampaign,
+    utmContent: leads.utmContent,
+    utmTerm: leads.utmTerm,
+  })
+    .from(leads)
+    .where(and(...conditions))
+    .orderBy(desc(leads.createdAt))
+    .limit(limit);
+
+  if (rows.length === 0) return [];
+
+  // Second query: find the most recent webhook_log per leadId so we can show
+  // "view payload" when available. One-shot query keeps this cheap.
+  const leadIds = rows.map((r) => r.leadId);
+  const logs = await db
+    .select({
+      id: webhookLogs.id,
+      leadId: webhookLogs.leadId,
+      endpoint: webhookLogs.endpoint,
+      rawPayload: webhookLogs.rawPayload,
+      createdAt: webhookLogs.createdAt,
+    })
+    .from(webhookLogs)
+    .where(and(inArray(webhookLogs.leadId, leadIds)))
+    .orderBy(desc(webhookLogs.createdAt));
+
+  // Take the first (most recent) log per leadId.
+  const logByLead = new Map<number, { id: number; endpoint: string | null; hasRawPayload: boolean }>();
+  for (const log of logs) {
+    if (log.leadId == null) continue;
+    if (!logByLead.has(log.leadId)) {
+      logByLead.set(log.leadId, {
+        id: log.id,
+        endpoint: log.endpoint ?? null,
+        hasRawPayload: Boolean(log.rawPayload && log.rawPayload.length > 0),
+      });
+    }
+  }
+
+  return rows.map((r) => {
+    const log = logByLead.get(r.leadId);
+    return {
+      leadId: r.leadId,
+      nombre: r.nombre,
+      correo: r.correo,
+      telefono: r.telefono,
+      origen: r.origen,
+      fecha: r.fecha,
+      createdAt: r.createdAt,
+      utmSource: r.utmSource,
+      utmMedium: r.utmMedium,
+      utmCampaign: r.utmCampaign,
+      utmContent: r.utmContent,
+      utmTerm: r.utmTerm,
+      webhookLogId: log?.id ?? null,
+      webhookEndpoint: log?.endpoint ?? null,
+      hasRawPayload: log?.hasRawPayload ?? false,
+    };
+  });
+}
+
+/** Fetch a single webhook_log by id — used by the "ver payload" modal. */
+export async function getWebhookLogById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(webhookLogs).where(eq(webhookLogs.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
 /**
  * Get daily spend trend for a date range (for charts).
  */

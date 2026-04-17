@@ -1306,6 +1306,32 @@ export const appRouter = router({
     leadCountByCampaign: publicProcedure
       .input(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
       .query(({ input }) => db.getLeadCountByUtmCampaign(input?.dateFrom, input?.dateTo)),
+
+    /**
+     * UTM completeness matrix per `origen`. Returns counts and percentages
+     * by UTM level so the audit panel can show where the fuga de atribución
+     * happens (typically INSTAGRAM via ManyChat webhook).
+     */
+    utmCompleteness: publicProcedure
+      .input(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
+      .query(({ input }) => db.getUtmCompleteness(input ?? undefined)),
+
+    /**
+     * Sample of recent leads with missing UTMs — includes the latest webhook
+     * log id so the UI can pop a "view payload" modal for forensic lookup.
+     */
+    sampleMissing: publicProcedure
+      .input(z.object({
+        limit: z.number().min(1).max(100).default(20),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }).optional())
+      .query(({ input }) => db.getLeadsWithMissingUtm(input ?? {})),
+
+    /** Raw webhook_log payload for inspection. Used by the audit panel modal. */
+    webhookLog: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(({ input }) => db.getWebhookLogById(input.id)),
   }),
 
   // ==================== SETTER WORK QUEUE ====================
