@@ -41,8 +41,13 @@ async function startServer() {
   const server = createServer(app);
   // Gzip/Brotli compression for all responses
   app.use(compression());
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
+  // Configure body parser with larger size limit for file uploads.
+  // `verify` preserves the raw Buffer on req.rawBody — needed by the Stripe
+  // webhook to verify signatures after JSON parsing has consumed the stream.
+  app.use(express.json({
+    limit: "50mb",
+    verify: (req: any, _res, buf) => { req.rawBody = buf; },
+  }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Auth routes (Supabase Auth callback)
   registerAuthRoutes(app);

@@ -20,4 +20,13 @@ export const ENV = {
   appUrl: process.env.APP_URL || process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : "http://localhost:3000",
+  // ---- Stripe ----
+  /** Server-side Stripe secret key (sk_live_... or sk_test_...). Required for
+   *  payment sync, checkout link generation, and API queries. */
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  /** Endpoint signing secret from Stripe Dashboard → Webhooks.
+   *  REQUIRED to verify that webhook events really come from Stripe. */
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  /** Reporting currency for the Stripe account. Normalized uppercase. */
+  stripeCurrency: (process.env.STRIPE_ACCOUNT_CURRENCY || "usd").toLowerCase(),
 };

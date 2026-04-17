@@ -853,6 +853,94 @@ export const manychatEvents = pgTable("manychat_events", {
 export type ManychatEvent = typeof manychatEvents.$inferSelect;
 export type InsertManychatEvent = typeof manychatEvents.$inferInsert;
 
+// ==================== STRIPE ====================
+//
+// Stripe is the source of truth for payments. We cache every charge we see
+// (via sync or webhook) here in `stripe_payments` and link it to a lead
+// via `leadId`. `cashCollected` on the lead is re-derived from these rows
+// minus refunds/disputes, so commissions stay honest automatically.
+
+export const stripePaymentStatusEnum = pgEnum("stripe_payment_status", [
+  "succeeded",
+  "pending",
+  "failed",
+  "refunded",
+  "partially_refunded",
+  "disputed",
+  "canceled",
+]);
+
+export const stripePayments = pgTable("stripe_payments", {
+  id: serial("id").primaryKey(),
+
+  // Stripe identifiers (source of truth — at least one is always set)
+  stripeChargeId: varchar("stripeChargeId", { length: 64 }).unique(),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 64 }),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 64 }),
+  stripeInvoiceId: varchar("stripeInvoiceId", { length: 64 }),
+  stripeCheckoutSessionId: varchar("stripeCheckoutSessionId", { length: 128 }),
+
+  // Money (stored in the currency-native unit, not cents)
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  amountRefunded: decimal("amountRefunded", { precision: 12, scale: 2 }).default("0"),
+  currency: varchar("currency", { length: 10 }).notNull(),
+  status: stripePaymentStatusEnum("status").notNull(),
+
+  // Payment method metadata for display
+  paymentMethodBrand: varchar("paymentMethodBrand", { length: 50 }),
+  last4: varchar("last4", { length: 4 }),
+  receiptUrl: text("receiptUrl"),
+
+  // Customer info as seen by Stripe
+  customerEmail: varchar("customerEmail", { length: 320 }),
+  customerName: varchar("customerName", { length: 255 }),
+  description: text("description"),
+
+  // CRM link
+  leadId: integer("leadId"),
+  matchMethod: varchar("matchMethod", { length: 30 }),  // "metadata" | "email_auto" | "manual" | "ambiguous" | null
+  matchedAt: timestamp("matchedAt"),
+  matchedBy: varchar("matchedBy", { length: 255 }),
+
+  // Full Stripe metadata object, untouched
+  rawMetadata: jsonb("rawMetadata"),
+  // Timestamp from Stripe (used for ordering + date filters)
+  stripeCreatedAt: timestamp("stripeCreatedAt").notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  leadIdx: index("idx_stripe_payments_lead").on(table.leadId),
+  statusIdx: index("idx_stripe_payments_status").on(table.status),
+  createdIdx: index("idx_stripe_payments_created").on(table.stripeCreatedAt),
+  emailIdx: index("idx_stripe_payments_email").on(table.customerEmail),
+}));
+
+export type StripePayment = typeof stripePayments.$inferSelect;
+export type InsertStripePayment = typeof stripePayments.$inferInsert;
+
+/**
+ * Every Stripe event we receive goes here. Unique on eventId so Stripe
+ * replays (common during endpoint retries) are idempotent — we insert
+ * once, then skip the handler on subsequent hits.
+ */
+export const stripeWebhookLogs = pgTable("stripe_webhook_logs", {
+  id: serial("id").primaryKey(),
+  eventId: varchar("eventId", { length: 128 }).notNull().unique(),
+  eventType: varchar("eventType", { length: 100 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull(),  // "received" | "processed" | "skipped" | "error"
+  errorMessage: text("errorMessage"),
+  rawPayload: text("rawPayload"),
+  processingTimeMs: integer("processingTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  typeIdx: index("idx_stripe_webhook_logs_type").on(table.eventType),
+  createdIdx: index("idx_stripe_webhook_logs_created").on(table.createdAt),
+}));
+
+export type StripeWebhookLog = typeof stripeWebhookLogs.$inferSelect;
+export type InsertStripeWebhookLog = typeof stripeWebhookLogs.$inferInsert;
+
 // ==================== SYSTEM CONFIG ====================
 /**
  * Global key/value config for platform-wide settings that aren't per-lead.

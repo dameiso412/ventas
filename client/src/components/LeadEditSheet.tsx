@@ -208,7 +208,7 @@ export function LeadEditSheet({ lead, onOpenChange, onNoShow }: LeadEditSheetPro
                   </TabsContent>
 
                   <TabsContent value="financiero" className="mt-0 focus-visible:outline-none">
-                    <FinancieroTab form={form} setField={setField} />
+                    <FinancieroTab form={form} setField={setField} lead={lead} />
                   </TabsContent>
 
                   <TabsContent value="datos" className="mt-0 focus-visible:outline-none">

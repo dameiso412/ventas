@@ -3,6 +3,13 @@ import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
 import { getSubscriberInfo, setCustomField } from "./manychat";
+import {
+  verifyWebhookSignature as stripeVerifySignature,
+  parseCharge,
+  parseCheckoutSession,
+  isStripeConfigured,
+} from "./stripe";
+import type Stripe from "stripe";
 import * as db from "./db";
 
 const webhookRouter = Router();
@@ -1455,5 +1462,147 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
     return res.status(200).json({ success: true, error: "internal_error" });
   }
 });
+
+// ============================================================
+// WEBHOOK: POST /api/webhook/stripe
+// Verifies the Stripe signature (using the raw body captured by
+// express.json verify callback), logs the event, and dispatches by type.
+// All handlers are idempotent — Stripe retries until we 2xx.
+// ============================================================
+
+webhookRouter.post("/api/webhook/stripe", async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  if (!isStripeConfigured()) {
+    console.warn("[Webhook:Stripe] Received event but STRIPE_SECRET_KEY is not configured");
+    return res.status(200).json({ received: true, skipped: true, reason: "not_configured" });
+  }
+
+  const signature = req.headers["stripe-signature"];
+  if (!signature || typeof signature !== "string") {
+    console.error("[Webhook:Stripe] Missing Stripe-Signature header");
+    return res.status(400).send("Missing signature");
+  }
+
+  // The raw body was captured during express.json()'s verify callback
+  // (see server/_core/index.ts). Signature verification needs the exact bytes.
+  const rawBody: Buffer | undefined = (req as any).rawBody;
+  if (!rawBody) {
+    console.error("[Webhook:Stripe] Raw body missing — verify callback not wired correctly");
+    return res.status(400).send("Raw body missing");
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripeVerifySignature(rawBody, signature);
+  } catch (err: any) {
+    console.error("[Webhook:Stripe] Signature verification failed:", err.message);
+    return res.status(400).send(`Webhook signature error: ${err.message}`);
+  }
+
+  // Idempotent logging — if we've seen this event.id before, skip the handler.
+  let logId = 0;
+  try {
+    const result = await db.createStripeWebhookLog({
+      eventId: event.id,
+      eventType: event.type,
+      status: "received",
+      rawPayload: JSON.stringify(event).substring(0, 100_000),
+    });
+    logId = result.id;
+    if (!result.isNew) {
+      console.log(`[Webhook:Stripe] Duplicate event ${event.id} (${event.type}) — skipping handler`);
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+  } catch (err: any) {
+    console.error("[Webhook:Stripe] Failed to create log (non-fatal):", err.message);
+  }
+
+  try {
+    await handleStripeEvent(event);
+    if (logId) {
+      await db.updateStripeWebhookLog(logId, {
+        status: "processed",
+        processingTimeMs: Date.now() - startedAt,
+      });
+    }
+    return res.status(200).json({ received: true, handled: event.type });
+  } catch (err: any) {
+    console.error(`[Webhook:Stripe] Handler error for ${event.type}:`, err.message, err.stack);
+    if (logId) {
+      await db.updateStripeWebhookLog(logId, {
+        status: "error",
+        errorMessage: err.message?.substring(0, 1000) ?? "unknown",
+        processingTimeMs: Date.now() - startedAt,
+      });
+    }
+    // Return 200 so Stripe doesn't retry forever for permanent failures,
+    // but the log keeps a record so we can manually reprocess.
+    return res.status(200).json({ received: true, error: "handler_failed" });
+  }
+});
+
+/**
+ * Route a Stripe event to the right upsert logic. We only care about events
+ * that affect payment state — everything else (customer.created, product.updated, etc.)
+ * is ignored silently so the log still records we saw it.
+ */
+async function handleStripeEvent(event: Stripe.Event): Promise<void> {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const parsed = await parseCheckoutSession(session);
+      if (!parsed) {
+        console.log(`[Webhook:Stripe] checkout.session.completed ${session.id} has no charge yet — skipping`);
+        return;
+      }
+      const { id } = await db.upsertStripePayment(parsed);
+      await db.attemptStripeAutoMatch(id);
+      console.log(`[Webhook:Stripe] Checkout ${session.id} upserted as payment #${id}`);
+      return;
+    }
+
+    case "charge.succeeded":
+    case "charge.updated":
+    case "charge.refunded":
+    case "charge.dispute.created":
+    case "charge.dispute.closed": {
+      // charge.dispute.* objects are Dispute, not Charge — fetch the related charge.
+      let charge: Stripe.Charge;
+      if (event.type.startsWith("charge.dispute.")) {
+        const dispute = event.data.object as Stripe.Dispute;
+        const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
+        const client = (await import("./stripe")).getStripeClient();
+        charge = await client.charges.retrieve(chargeId);
+      } else {
+        charge = event.data.object as Stripe.Charge;
+      }
+      const parsed = parseCharge(charge);
+      const { id } = await db.upsertStripePayment(parsed);
+      await db.attemptStripeAutoMatch(id);
+      console.log(`[Webhook:Stripe] ${event.type} ${charge.id} upserted as payment #${id} status=${parsed.status}`);
+      return;
+    }
+
+    case "payment_intent.succeeded": {
+      // Already handled by the follow-up charge.succeeded, but if the PI was
+      // confirmed without an immediate charge webhook (rare), we back-reference
+      // the latest_charge here.
+      const pi = event.data.object as Stripe.PaymentIntent;
+      const chargeId = typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id;
+      if (!chargeId) return;
+      const client = (await import("./stripe")).getStripeClient();
+      const charge = await client.charges.retrieve(chargeId);
+      const parsed = parseCharge(charge);
+      const { id } = await db.upsertStripePayment(parsed);
+      await db.attemptStripeAutoMatch(id);
+      console.log(`[Webhook:Stripe] payment_intent.succeeded ${pi.id} upserted as payment #${id}`);
+      return;
+    }
+
+    default:
+      // Not an error — we intentionally accept and ignore events we don't care about.
+      console.log(`[Webhook:Stripe] Ignored event type ${event.type}`);
+  }
+}
 
 export { webhookRouter };

@@ -28,6 +28,8 @@ import {
   revenueScenarios, InsertRevenueScenario,
   leadDataEntries, InsertLeadDataEntry,
   manychatEvents, InsertManychatEvent,
+  stripePayments, InsertStripePayment, StripePayment,
+  stripeWebhookLogs, InsertStripeWebhookLog,
   systemConfig,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -4822,12 +4824,24 @@ export async function getCommissions(filters?: { mes?: string; semana?: number }
   const rates = await getCommissionRates();
   const { payments } = await getPayments(filters);
 
-  // Bucket by closer
+  // --- Stripe refund/dispute deductions ---
+  // Any lead with a matched Stripe payment in `refunded`, `partially_refunded`,
+  // or `disputed` state has that money pulled back from the commission base.
+  // This keeps comisiones honest without the admin having to manually decrement
+  // `cashCollected`.
+  const leadIds = payments.map((p) => p.id);
+  const deductions = await getStripeDeductionsByLead(leadIds);
+
+  // Bucket by closer, applying per-lead deduction first so pct splits are correct.
   const byCloser = new Map<string, PaymentRow[]>();
   for (const p of payments) {
     if (!p.closer) continue;
+    const deduction = deductions.get(p.id) ?? 0;
+    const adjusted: PaymentRow = deduction > 0
+      ? { ...p, cashCollected: Math.max(0, p.cashCollected - deduction) }
+      : p;
     const list = byCloser.get(p.closer) ?? [];
-    list.push(p);
+    list.push(adjusted);
     byCloser.set(p.closer, list);
   }
 
@@ -4878,4 +4892,408 @@ export async function getCommissions(filters?: { mes?: string; semana?: number }
   );
 
   return { rows, totals, rates };
+}
+
+// ==================== STRIPE PAYMENTS ====================
+//
+// Local cache of Stripe charges + helpers. Two write paths:
+//   1. Sync: admin kicks off a one-time backfill of historical charges.
+//   2. Webhook: every state change (succeeded → refunded → disputed) upserts
+//      the same row by `stripeChargeId`.
+// The read path is the same in both cases — the UI doesn't care how a row
+// got there.
+
+/**
+ * Input shape accepted by `upsertStripePayment`. Keeps numeric amounts as
+ * `number` for callers (the Stripe parser, manual code) — they're coerced
+ * to strings here before hitting Drizzle's decimal columns.
+ */
+export type StripePaymentInsert = {
+  stripeChargeId: string | null;
+  stripePaymentIntentId: string | null;
+  stripeCustomerId: string | null;
+  stripeInvoiceId: string | null;
+  stripeCheckoutSessionId: string | null;
+  amount: number;
+  amountRefunded: number;
+  currency: string;
+  status: "succeeded" | "pending" | "failed" | "refunded" | "partially_refunded" | "disputed" | "canceled";
+  paymentMethodBrand: string | null;
+  last4: string | null;
+  receiptUrl: string | null;
+  customerEmail: string | null;
+  customerName: string | null;
+  description: string | null;
+  rawMetadata: Record<string, any> | null;
+  stripeCreatedAt: Date;
+  leadId?: number | null;
+  matchMethod?: string | null;
+  matchedAt?: Date | null;
+  matchedBy?: string | null;
+};
+
+/**
+ * Upsert a parsed Stripe payment by `stripeChargeId`. Preserves lead linkage
+ * and matchMethod across updates — a refund coming in later shouldn't wipe
+ * the leadId that a successful charge set when it first arrived.
+ */
+export async function upsertStripePayment(payment: StripePaymentInsert): Promise<{ id: number; isNew: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Drizzle numeric/decimal columns expect strings on the wire — convert once
+  // here so every caller can keep numbers in their own code.
+  const toInsert: InsertStripePayment = {
+    stripeChargeId: payment.stripeChargeId ?? null,
+    stripePaymentIntentId: payment.stripePaymentIntentId ?? null,
+    stripeCustomerId: payment.stripeCustomerId ?? null,
+    stripeInvoiceId: payment.stripeInvoiceId ?? null,
+    stripeCheckoutSessionId: payment.stripeCheckoutSessionId ?? null,
+    amount: payment.amount.toFixed(2),
+    amountRefunded: payment.amountRefunded.toFixed(2),
+    currency: payment.currency,
+    status: payment.status,
+    paymentMethodBrand: payment.paymentMethodBrand ?? null,
+    last4: payment.last4 ?? null,
+    receiptUrl: payment.receiptUrl ?? null,
+    customerEmail: payment.customerEmail ?? null,
+    customerName: payment.customerName ?? null,
+    description: payment.description ?? null,
+    rawMetadata: payment.rawMetadata ?? null,
+    stripeCreatedAt: payment.stripeCreatedAt,
+    leadId: payment.leadId ?? null,
+    matchMethod: payment.matchMethod ?? null,
+    matchedAt: payment.matchedAt ?? null,
+    matchedBy: payment.matchedBy ?? null,
+    updatedAt: new Date(),
+  };
+
+  if (!payment.stripeChargeId) {
+    // No stable key to upsert on — just insert.
+    const [row] = await db.insert(stripePayments).values(toInsert).returning({ id: stripePayments.id });
+    return { id: row.id, isNew: true };
+  }
+
+  const existing = await db.select({ id: stripePayments.id, leadId: stripePayments.leadId, matchMethod: stripePayments.matchMethod, matchedAt: stripePayments.matchedAt, matchedBy: stripePayments.matchedBy })
+    .from(stripePayments)
+    .where(eq(stripePayments.stripeChargeId, payment.stripeChargeId))
+    .limit(1);
+
+  if (existing.length === 0) {
+    const [row] = await db.insert(stripePayments).values(toInsert).returning({ id: stripePayments.id });
+    return { id: row.id, isNew: true };
+  }
+
+  // Preserve manual link if a later event was missing it (e.g. if a refund
+  // event arrives, the Stripe API won't re-send the metadata we used to match).
+  const prev = existing[0];
+  await db.update(stripePayments)
+    .set({
+      ...toInsert,
+      // Never overwrite a good link with null
+      leadId: toInsert.leadId ?? prev.leadId,
+      matchMethod: toInsert.matchMethod ?? prev.matchMethod,
+      matchedAt: toInsert.matchedAt ?? prev.matchedAt,
+      matchedBy: toInsert.matchedBy ?? prev.matchedBy,
+    })
+    .where(eq(stripePayments.id, prev.id));
+
+  return { id: prev.id, isNew: false };
+}
+
+/**
+ * Auto-match a payment to a lead by email (exact match, case-insensitive).
+ * Returns `{ matched: true, leadId }` on single unique hit, otherwise
+ * `{ matched: false, reason }`. Ambiguous (2+ leads with same email) is
+ * marked with matchMethod="ambiguous" on the payment so the admin can
+ * disambiguate manually.
+ */
+export async function attemptStripeAutoMatch(paymentId: number): Promise<{ matched: boolean; leadId?: number; reason?: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [payment] = await db.select().from(stripePayments).where(eq(stripePayments.id, paymentId)).limit(1);
+  if (!payment) return { matched: false, reason: "payment_not_found" };
+  if (payment.leadId) return { matched: true, leadId: payment.leadId, reason: "already_matched" };
+
+  // Priority 1: explicit leadId in Stripe metadata (comes from our own
+  // createCheckoutSession — the most reliable signal we have).
+  const metaLeadId = Number((payment.rawMetadata as any)?.leadId);
+  if (metaLeadId && Number.isFinite(metaLeadId)) {
+    const [lead] = await db.select({ id: leads.id }).from(leads).where(eq(leads.id, metaLeadId)).limit(1);
+    if (lead) {
+      await db.update(stripePayments).set({
+        leadId: lead.id,
+        matchMethod: "metadata",
+        matchedAt: new Date(),
+        matchedBy: "auto",
+        updatedAt: new Date(),
+      }).where(eq(stripePayments.id, payment.id));
+      return { matched: true, leadId: lead.id, reason: "metadata" };
+    }
+  }
+
+  // Priority 2: email match. Case-insensitive. If >1 hit, mark ambiguous.
+  const email = payment.customerEmail?.trim().toLowerCase();
+  if (!email) {
+    return { matched: false, reason: "no_email" };
+  }
+
+  const matches = await db.select({ id: leads.id })
+    .from(leads)
+    .where(sql`lower(${leads.correo}) = ${email}`)
+    .limit(2);
+
+  if (matches.length === 0) return { matched: false, reason: "no_lead_match" };
+  if (matches.length > 1) {
+    await db.update(stripePayments).set({
+      matchMethod: "ambiguous",
+      updatedAt: new Date(),
+    }).where(eq(stripePayments.id, payment.id));
+    return { matched: false, reason: "ambiguous_email" };
+  }
+
+  await db.update(stripePayments).set({
+    leadId: matches[0].id,
+    matchMethod: "email_auto",
+    matchedAt: new Date(),
+    matchedBy: "auto",
+    updatedAt: new Date(),
+  }).where(eq(stripePayments.id, payment.id));
+
+  return { matched: true, leadId: matches[0].id, reason: "email" };
+}
+
+export async function assignStripePaymentToLead(params: { paymentId: number; leadId: number; matchedBy: string }): Promise<{ ok: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Verify both exist before linking
+  const [lead] = await db.select({ id: leads.id }).from(leads).where(eq(leads.id, params.leadId)).limit(1);
+  if (!lead) throw new Error(`Lead #${params.leadId} not found`);
+  const [payment] = await db.select({ id: stripePayments.id }).from(stripePayments).where(eq(stripePayments.id, params.paymentId)).limit(1);
+  if (!payment) throw new Error(`Stripe payment #${params.paymentId} not found`);
+
+  await db.update(stripePayments).set({
+    leadId: params.leadId,
+    matchMethod: "manual",
+    matchedAt: new Date(),
+    matchedBy: params.matchedBy,
+    updatedAt: new Date(),
+  }).where(eq(stripePayments.id, params.paymentId));
+
+  return { ok: true };
+}
+
+export async function unassignStripePaymentFromLead(paymentId: number): Promise<{ ok: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(stripePayments).set({
+    leadId: null,
+    matchMethod: null,
+    matchedAt: null,
+    matchedBy: null,
+    updatedAt: new Date(),
+  }).where(eq(stripePayments.id, paymentId));
+  return { ok: true };
+}
+
+export interface StripePaymentRow {
+  id: number;
+  stripeChargeId: string | null;
+  stripePaymentIntentId: string | null;
+  stripeCheckoutSessionId: string | null;
+  amount: number;
+  amountRefunded: number;
+  amountNet: number;              // amount - amountRefunded
+  currency: string;
+  status: string;
+  paymentMethodBrand: string | null;
+  last4: string | null;
+  receiptUrl: string | null;
+  customerEmail: string | null;
+  customerName: string | null;
+  description: string | null;
+  leadId: number | null;
+  leadNombre: string | null;
+  leadCorreo: string | null;
+  matchMethod: string | null;
+  matchedAt: Date | null;
+  matchedBy: string | null;
+  stripeCreatedAt: Date;
+  createdAt: Date;
+}
+
+/**
+ * List Stripe payments with optional filter on link status.
+ *   kind: "assigned" → only those with leadId
+ *         "unassigned" → only those without leadId (includes "ambiguous")
+ *         "all" (default) → both
+ */
+export async function listStripePayments(params: {
+  kind?: "assigned" | "unassigned" | "all";
+  status?: "succeeded" | "refunded" | "partially_refunded" | "disputed" | "failed";
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+} = {}): Promise<StripePaymentRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = params.limit ?? 200;
+  const conds: any[] = [];
+  if (params.kind === "assigned") conds.push(isNotNull(stripePayments.leadId));
+  if (params.kind === "unassigned") conds.push(isNull(stripePayments.leadId));
+  if (params.status) conds.push(eq(stripePayments.status, params.status as any));
+  if (params.dateFrom) conds.push(gte(stripePayments.stripeCreatedAt, new Date(params.dateFrom)));
+  if (params.dateTo) conds.push(lte(stripePayments.stripeCreatedAt, new Date(params.dateTo)));
+
+  const rows = await db.select({
+    id: stripePayments.id,
+    stripeChargeId: stripePayments.stripeChargeId,
+    stripePaymentIntentId: stripePayments.stripePaymentIntentId,
+    stripeCheckoutSessionId: stripePayments.stripeCheckoutSessionId,
+    amount: stripePayments.amount,
+    amountRefunded: stripePayments.amountRefunded,
+    currency: stripePayments.currency,
+    status: stripePayments.status,
+    paymentMethodBrand: stripePayments.paymentMethodBrand,
+    last4: stripePayments.last4,
+    receiptUrl: stripePayments.receiptUrl,
+    customerEmail: stripePayments.customerEmail,
+    customerName: stripePayments.customerName,
+    description: stripePayments.description,
+    leadId: stripePayments.leadId,
+    matchMethod: stripePayments.matchMethod,
+    matchedAt: stripePayments.matchedAt,
+    matchedBy: stripePayments.matchedBy,
+    stripeCreatedAt: stripePayments.stripeCreatedAt,
+    createdAt: stripePayments.createdAt,
+    leadNombre: leads.nombre,
+    leadCorreo: leads.correo,
+  })
+    .from(stripePayments)
+    .leftJoin(leads, eq(stripePayments.leadId, leads.id))
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(desc(stripePayments.stripeCreatedAt))
+    .limit(limit);
+
+  return rows.map((r) => {
+    const amount = Number(r.amount ?? 0);
+    const amountRefunded = Number(r.amountRefunded ?? 0);
+    return {
+      id: r.id,
+      stripeChargeId: r.stripeChargeId,
+      stripePaymentIntentId: r.stripePaymentIntentId,
+      stripeCheckoutSessionId: r.stripeCheckoutSessionId,
+      amount,
+      amountRefunded,
+      amountNet: Math.max(0, amount - amountRefunded),
+      currency: r.currency,
+      status: r.status as string,
+      paymentMethodBrand: r.paymentMethodBrand,
+      last4: r.last4,
+      receiptUrl: r.receiptUrl,
+      customerEmail: r.customerEmail,
+      customerName: r.customerName,
+      description: r.description,
+      leadId: r.leadId,
+      leadNombre: r.leadNombre,
+      leadCorreo: r.leadCorreo,
+      matchMethod: r.matchMethod,
+      matchedAt: r.matchedAt,
+      matchedBy: r.matchedBy,
+      stripeCreatedAt: r.stripeCreatedAt,
+      createdAt: r.createdAt,
+    };
+  });
+}
+
+/** Stripe payments linked to a given lead, ordered newest first. */
+export async function getStripePaymentsByLead(leadId: number): Promise<StripePaymentRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select()
+    .from(stripePayments)
+    .where(eq(stripePayments.leadId, leadId))
+    .orderBy(desc(stripePayments.stripeCreatedAt));
+
+  return rows.map((r) => {
+    const amount = Number(r.amount ?? 0);
+    const amountRefunded = Number(r.amountRefunded ?? 0);
+    return {
+      id: r.id,
+      stripeChargeId: r.stripeChargeId,
+      stripePaymentIntentId: r.stripePaymentIntentId,
+      stripeCheckoutSessionId: r.stripeCheckoutSessionId,
+      amount,
+      amountRefunded,
+      amountNet: Math.max(0, amount - amountRefunded),
+      currency: r.currency,
+      status: r.status as string,
+      paymentMethodBrand: r.paymentMethodBrand,
+      last4: r.last4,
+      receiptUrl: r.receiptUrl,
+      customerEmail: r.customerEmail,
+      customerName: r.customerName,
+      description: r.description,
+      leadId: r.leadId,
+      leadNombre: null,
+      leadCorreo: null,
+      matchMethod: r.matchMethod,
+      matchedAt: r.matchedAt,
+      matchedBy: r.matchedBy,
+      stripeCreatedAt: r.stripeCreatedAt,
+      createdAt: r.createdAt,
+    };
+  });
+}
+
+/** Aggregate refunded/disputed $ amount per lead, for commission adjustments. */
+export async function getStripeDeductionsByLead(leadIds: number[]): Promise<Map<number, number>> {
+  const db = await getDb();
+  const out = new Map<number, number>();
+  if (!db || leadIds.length === 0) return out;
+
+  const rows = await db.select({
+    leadId: stripePayments.leadId,
+    refundSum: sql<number>`COALESCE(SUM(CAST(${stripePayments.amountRefunded} AS NUMERIC)), 0)::numeric`,
+  })
+    .from(stripePayments)
+    .where(and(
+      inArray(stripePayments.leadId, leadIds),
+      or(eq(stripePayments.status, "refunded"), eq(stripePayments.status, "partially_refunded"), eq(stripePayments.status, "disputed")) as any,
+    ))
+    .groupBy(stripePayments.leadId);
+
+  for (const r of rows) {
+    if (r.leadId != null) out.set(r.leadId, Number(r.refundSum ?? 0));
+  }
+  return out;
+}
+
+// ---------- Stripe webhook log (idempotency) ----------
+
+export async function createStripeWebhookLog(data: InsertStripeWebhookLog): Promise<{ id: number; isNew: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  try {
+    const [row] = await db.insert(stripeWebhookLogs).values(data).returning({ id: stripeWebhookLogs.id });
+    return { id: row.id, isNew: true };
+  } catch (err: any) {
+    // Unique violation on eventId → Stripe replayed an event. We treat this
+    // as "already processed" and noop the handler.
+    if (err?.code === "23505" || err?.message?.includes("unique")) {
+      const [existing] = await db.select({ id: stripeWebhookLogs.id })
+        .from(stripeWebhookLogs)
+        .where(eq(stripeWebhookLogs.eventId, data.eventId))
+        .limit(1);
+      return { id: existing?.id ?? 0, isNew: false };
+    }
+    throw err;
+  }
+}
+
+export async function updateStripeWebhookLog(id: number, data: Partial<InsertStripeWebhookLog>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(stripeWebhookLogs).set(data).where(eq(stripeWebhookLogs.id, id));
 }

@@ -1400,6 +1400,101 @@ export const appRouter = router({
       .mutation(({ input }) => db.deleteTeamMember(input.id)),
   }),
 
+  // ==================== STRIPE ====================
+  stripe: router({
+    /** Quick health check — exposes whether keys are configured and connection works. */
+    status: adminProcedure.query(async () => {
+      const { isStripeConfigured, validateStripeConnection } = await import("./stripe");
+      if (!isStripeConfigured()) {
+        return { configured: false, connected: false, error: "STRIPE_SECRET_KEY not set" };
+      }
+      const result = await validateStripeConnection();
+      return { configured: true, connected: result.ok, accountId: result.accountId, error: result.error };
+    }),
+
+    /**
+     * One-shot historical backfill. Pulls charges from the last N days and
+     * upserts them locally. Safe to re-run — upsert key is stripeChargeId.
+     */
+    syncHistorical: adminProcedure
+      .input(z.object({ sinceDays: z.number().min(1).max(730).default(180) }))
+      .mutation(async ({ input }) => {
+        const { listHistoricalCharges } = await import("./stripe");
+        const charges = await listHistoricalCharges(input.sinceDays);
+        let inserted = 0;
+        let updated = 0;
+        let matched = 0;
+        for (const c of charges) {
+          const { id, isNew } = await db.upsertStripePayment(c);
+          if (isNew) inserted++; else updated++;
+          const autoMatch = await db.attemptStripeAutoMatch(id);
+          if (autoMatch.matched) matched++;
+        }
+        return { total: charges.length, inserted, updated, matched, sinceDays: input.sinceDays };
+      }),
+
+    /** List payments with filter by assigned/unassigned. */
+    listPayments: adminProcedure
+      .input(z.object({
+        kind: z.enum(["assigned", "unassigned", "all"]).default("all"),
+        status: z.enum(["succeeded", "refunded", "partially_refunded", "disputed", "failed"]).optional(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        limit: z.number().min(1).max(500).default(200),
+      }).optional())
+      .query(({ input }) => db.listStripePayments(input ?? {})),
+
+    /** Payments belonging to a specific lead (for the ficha sidebar). */
+    paymentsByLead: crmProcedure
+      .input(z.object({ leadId: z.number() }))
+      .query(({ input }) => db.getStripePaymentsByLead(input.leadId)),
+
+    /** Link a payment to a lead (admin). `matchMethod="manual"`. */
+    assignPaymentToLead: adminProcedure
+      .input(z.object({ paymentId: z.number(), leadId: z.number() }))
+      .mutation(({ input, ctx }) => db.assignStripePaymentToLead({
+        paymentId: input.paymentId,
+        leadId: input.leadId,
+        matchedBy: ctx.user?.name || ctx.user?.email || "admin",
+      })),
+
+    /** Unlink a payment (sends it back to "Sin asociar"). */
+    unassignPaymentFromLead: adminProcedure
+      .input(z.object({ paymentId: z.number() }))
+      .mutation(({ input }) => db.unassignStripePaymentFromLead(input.paymentId)),
+
+    /**
+     * Create a Stripe Checkout Session with metadata.leadId pre-populated.
+     * Returns the hosted checkout URL; the frontend copies it to clipboard or
+     * opens it in a new tab. Webhook will auto-link the resulting payment
+     * on metadata (no email matching required).
+     */
+    createPaymentLink: adminProcedure
+      .input(z.object({
+        leadId: z.number(),
+        amount: z.number().positive(),
+        currency: z.string().optional(),
+        description: z.string().min(1),
+        productType: z.enum(["PIF", "SETUP_MONTHLY"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { createCheckoutSession } = await import("./stripe");
+        const lead = await db.getLeadById(input.leadId);
+        if (!lead) throw new Error(`Lead #${input.leadId} not found`);
+        const base = (globalThis as any).process?.env?.APP_URL || "https://app.sacamedi.com";
+        return createCheckoutSession({
+          leadId: input.leadId,
+          amount: input.amount,
+          currency: input.currency,
+          description: input.description,
+          productType: input.productType,
+          customerEmail: lead.correo ?? undefined,
+          successUrl: `${base}/ventas/pagos?stripe=success`,
+          cancelUrl: `${base}/ventas/pagos?stripe=canceled`,
+        });
+      }),
+  }),
+
   // ==================== ACCESS CONTROL ====================
   access: router({
     /** List all allowed emails (admin only) */
