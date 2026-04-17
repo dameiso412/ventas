@@ -1158,7 +1158,23 @@ export const appRouter = router({
       for (const ad of ads) {
         await db.upsertAdAd({ adId: ad.id, adsetId: ad.adset_id, campaignId: ad.campaign_id, name: ad.name, status: ad.status, urlTags: ad.url_tags });
       }
-      return { campaigns: campaigns.length, adsets: adsets.length, ads: ads.length };
+
+      // Fetch creatives (thumbnail/video/copy) for every ad so attribution UIs
+      // can render the actual anuncio instead of just the adId. We don't fail
+      // the whole sync if this step errors — structure data is still valuable.
+      let creativesSynced = 0;
+      try {
+        const adIds = ads.map((a) => a.id).filter(Boolean);
+        const creatives = await metaAds.fetchAdCreatives(adIds);
+        for (const c of creatives) {
+          await db.upsertAdCreative(c);
+          creativesSynced += 1;
+        }
+      } catch (err: any) {
+        console.error("[metaAds.syncStructure] fetchAdCreatives failed:", err?.message);
+      }
+
+      return { campaigns: campaigns.length, adsets: adsets.length, ads: ads.length, creatives: creativesSynced };
     }),
 
     /** Sync daily insights from Meta Ads API */
@@ -1245,6 +1261,16 @@ export const appRouter = router({
 
     /** Get recommended UTM tags */
     recommendedUtmTags: publicProcedure.query(() => ({ tags: metaAds.getRecommendedUtmTags() })),
+
+    /** Get cached creative (video/thumbnail/copy) for a single ad by its Meta adId. */
+    creativeByAdId: publicProcedure
+      .input(z.object({ adId: z.string() }))
+      .query(({ input }) => db.getAdCreative(input.adId)),
+
+    /** Batch lookup: returns { [adId]: creative } for all adIds that have a cached creative. */
+    creativesByAdIds: publicProcedure
+      .input(z.object({ adIds: z.array(z.string()) }))
+      .query(({ input }) => db.getAdCreativesByAdIds(input.adIds)),
 
     /** Trigger a manual full sync (structure + insights) */
     fullSync: publicProcedure.mutation(async () => {

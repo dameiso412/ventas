@@ -625,6 +625,41 @@ export type AdAd = typeof adAds.$inferSelect;
 export type InsertAdAd = typeof adAds.$inferInsert;
 
 /**
+ * Ad Creatives - Cached creative media (video, thumbnail, image) for each ad.
+ *
+ * One row per adId. Fed by `fetchAdCreatives()` during `metaAds.syncStructure`.
+ * Lets the CRM show the actual video/image that brought each lead, inline in
+ * Atribucion drill-downs and lead detail sheets — instead of forcing the team
+ * to open Meta Ads Manager and search by adId.
+ */
+export const adCreatives = pgTable("ad_creatives", {
+  id: serial("id").primaryKey(),
+  adId: varchar("adId", { length: 64 }).notNull().unique(),
+  creativeId: varchar("creativeId", { length: 64 }),
+  // Media
+  videoId: varchar("videoId", { length: 64 }),
+  videoSourceUrl: text("videoSourceUrl"),
+  videoPermalinkUrl: text("videoPermalinkUrl"),
+  thumbnailUrl: text("thumbnailUrl"),
+  imageUrl: text("imageUrl"),
+  // Copy
+  title: varchar("title", { length: 500 }),
+  body: text("body"),
+  callToActionType: varchar("callToActionType", { length: 50 }),
+  // Destination
+  destinationUrl: text("destinationUrl"),
+  instagramPermalinkUrl: text("instagramPermalinkUrl"),
+  // Meta
+  effectiveObjectStoryId: varchar("effectiveObjectStoryId", { length: 128 }),
+  lastSyncedAt: timestamp("lastSyncedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type AdCreative = typeof adCreatives.$inferSelect;
+export type InsertAdCreative = typeof adCreatives.$inferInsert;
+
+/**
  * Ad Metrics Daily - Daily performance metrics from Meta Ads API
  */
 export const adMetricsDaily = pgTable("ad_metrics_daily", {

@@ -20,6 +20,7 @@ import {
   adCampaigns, InsertAdCampaign,
   adAdsets, InsertAdAdset,
   adAds, InsertAdAd,
+  adCreatives, InsertAdCreative, AdCreative,
   adMetricsDaily, InsertAdMetricDaily,
   syncLog, InsertSyncLog,
   teamMembers, InsertTeamMember, TeamMember,
@@ -2201,6 +2202,65 @@ export async function getAdAds(filters?: { campaignId?: string; adsetId?: string
   return db.select().from(adAds)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(adAds.updatedAt));
+}
+
+// ==================== AD CREATIVES ====================
+
+/**
+ * Upsert a single ad creative (video/image/copy metadata). Indexed by adId so
+ * re-running `syncStructure` refreshes the cached media without duplicating.
+ */
+export async function upsertAdCreative(
+  data: Omit<InsertAdCreative, "id" | "createdAt" | "updatedAt" | "lastSyncedAt">
+) {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db.insert(adCreatives).values({
+    ...data,
+    lastSyncedAt: now,
+  }).onConflictDoUpdate({
+    target: adCreatives.adId,
+    set: {
+      creativeId: data.creativeId,
+      videoId: data.videoId,
+      videoSourceUrl: data.videoSourceUrl,
+      videoPermalinkUrl: data.videoPermalinkUrl,
+      thumbnailUrl: data.thumbnailUrl,
+      imageUrl: data.imageUrl,
+      title: data.title,
+      body: data.body,
+      callToActionType: data.callToActionType,
+      destinationUrl: data.destinationUrl,
+      instagramPermalinkUrl: data.instagramPermalinkUrl,
+      effectiveObjectStoryId: data.effectiveObjectStoryId,
+      lastSyncedAt: now,
+      updatedAt: now,
+    },
+  });
+}
+
+/** Lookup a single creative by the Meta ad ID. Returns null when not cached. */
+export async function getAdCreative(adId: string): Promise<AdCreative | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(adCreatives).where(eq(adCreatives.adId, adId)).limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Batch lookup for creatives — returns a map keyed by adId so callers (UI
+ * grids, attribution drill-downs) can build a lookup table in one roundtrip.
+ */
+export async function getAdCreativesByAdIds(adIds: string[]): Promise<Record<string, AdCreative>> {
+  if (!adIds.length) return {};
+  const db = await getDb();
+  if (!db) return {};
+  const rows = await db.select().from(adCreatives).where(inArray(adCreatives.adId, adIds));
+  return rows.reduce<Record<string, AdCreative>>((acc, row) => {
+    acc[row.adId] = row;
+    return acc;
+  }, {});
 }
 
 // ==================== AD METRICS DAILY ====================

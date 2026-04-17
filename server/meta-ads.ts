@@ -300,3 +300,242 @@ export async function validateToken(): Promise<{
     return { valid: false, error: err.message };
   }
 }
+
+// ==================== AD CREATIVES ====================
+
+/**
+ * Parsed creative used to upsert into `ad_creatives`. Normalised across
+ * video / image / link / Instagram ads so the UI can render a single
+ * component regardless of the original format.
+ */
+export interface ParsedCreative {
+  adId: string;
+  creativeId: string | null;
+  videoId: string | null;
+  videoSourceUrl: string | null;
+  videoPermalinkUrl: string | null;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  title: string | null;
+  body: string | null;
+  callToActionType: string | null;
+  destinationUrl: string | null;
+  instagramPermalinkUrl: string | null;
+  effectiveObjectStoryId: string | null;
+}
+
+/** Raw creative payload returned by Meta Graph (partial fields we care about). */
+interface MetaCreative {
+  id: string;
+  title?: string;
+  name?: string;
+  body?: string;
+  thumbnail_url?: string;
+  image_url?: string;
+  video_id?: string;
+  effective_object_story_id?: string;
+  effective_instagram_media_id?: string;
+  instagram_permalink_url?: string;
+  call_to_action_type?: string;
+  url_tags?: string;
+  object_story_spec?: {
+    link_data?: {
+      link?: string;
+      message?: string;
+      name?: string;
+      description?: string;
+      call_to_action?: { type?: string };
+      image_hash?: string;
+    };
+    video_data?: {
+      video_id?: string;
+      title?: string;
+      message?: string;
+      call_to_action?: { type?: string; value?: { link?: string } };
+    };
+  };
+}
+
+interface MetaVideo {
+  id: string;
+  source?: string;
+  permalink_url?: string;
+  picture?: string;
+}
+
+const CREATIVE_FIELDS = [
+  "id",
+  "title",
+  "name",
+  "body",
+  "thumbnail_url",
+  "image_url",
+  "video_id",
+  "effective_object_story_id",
+  "effective_instagram_media_id",
+  "instagram_permalink_url",
+  "call_to_action_type",
+  "url_tags",
+  "object_story_spec{link_data{link,message,name,description,call_to_action,image_hash},video_data{video_id,title,message,call_to_action}}",
+].join(",");
+
+/**
+ * Chunked + retried batch fetch for ad creatives.
+ *
+ * Uses Meta's `?ids=` batch endpoint (max 50 per request) so we don't fan out
+ * to N separate calls per sync. Does a second pass to expand video source URLs
+ * (Graph returns only `video_id`, we need the mp4 to render `<video src>`).
+ *
+ * Returns one `ParsedCreative` per adId we successfully fetched. Ads that
+ * error out individually are skipped rather than failing the whole batch.
+ */
+export async function fetchAdCreatives(adIds: string[]): Promise<ParsedCreative[]> {
+  if (!adIds.length) return [];
+
+  // Dedupe + chunk into batches of 50 (Meta's cap on ?ids=)
+  const unique = Array.from(new Set(adIds.filter(Boolean)));
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 50) {
+    chunks.push(unique.slice(i, i + 50));
+  }
+
+  const creatives: ParsedCreative[] = [];
+  const videoIds = new Set<string>();
+
+  for (const chunk of chunks) {
+    type AdBatchResponse = Record<string, { id: string; creative?: MetaCreative; error?: { message: string } }>;
+    let batch: AdBatchResponse;
+    try {
+      batch = await metaFetchWithRetry<AdBatchResponse>("", {
+        ids: chunk.join(","),
+        fields: `creative{${CREATIVE_FIELDS}}`,
+      });
+    } catch (err: any) {
+      console.error(`[MetaAds:fetchAdCreatives] chunk failed, skipping:`, err?.message);
+      continue;
+    }
+
+    for (const adId of chunk) {
+      const entry = batch[adId];
+      if (!entry || entry.error || !entry.creative) continue;
+
+      const parsed = parseCreative(adId, entry.creative);
+      creatives.push(parsed);
+      if (parsed.videoId) videoIds.add(parsed.videoId);
+    }
+  }
+
+  // Second pass: expand video metadata so we have a playable source URL.
+  if (videoIds.size) {
+    const videoMap = await fetchVideoMetadata(Array.from(videoIds));
+    for (const c of creatives) {
+      if (c.videoId && videoMap[c.videoId]) {
+        const v = videoMap[c.videoId];
+        c.videoSourceUrl = v.source ?? c.videoSourceUrl;
+        c.videoPermalinkUrl = v.permalink_url ?? c.videoPermalinkUrl;
+        // Keep the existing thumbnail if Meta already returned one for the creative;
+        // fall back to the video's `picture` frame otherwise.
+        if (!c.thumbnailUrl && v.picture) c.thumbnailUrl = v.picture;
+      }
+    }
+  }
+
+  return creatives;
+}
+
+/**
+ * Fetch source+permalink for each video ID. Batched the same way as creatives.
+ * Returns a map keyed by videoId.
+ */
+async function fetchVideoMetadata(videoIds: string[]): Promise<Record<string, MetaVideo>> {
+  if (!videoIds.length) return {};
+  const chunks: string[][] = [];
+  for (let i = 0; i < videoIds.length; i += 50) {
+    chunks.push(videoIds.slice(i, i + 50));
+  }
+
+  const result: Record<string, MetaVideo> = {};
+  for (const chunk of chunks) {
+    try {
+      const batch = await metaFetchWithRetry<Record<string, MetaVideo>>("", {
+        ids: chunk.join(","),
+        fields: "source,permalink_url,picture",
+      });
+      for (const [vid, v] of Object.entries(batch)) {
+        if (v && typeof v === "object") result[vid] = v;
+      }
+    } catch (err: any) {
+      console.error(`[MetaAds:fetchVideoMetadata] chunk failed, skipping:`, err?.message);
+    }
+  }
+  return result;
+}
+
+/** Normalise a Meta creative into the shape we persist. */
+function parseCreative(adId: string, c: MetaCreative): ParsedCreative {
+  const linkData = c.object_story_spec?.link_data;
+  const videoData = c.object_story_spec?.video_data;
+
+  const videoId = c.video_id || videoData?.video_id || null;
+  const title = c.title || c.name || linkData?.name || videoData?.title || null;
+  const body = c.body || linkData?.message || videoData?.message || null;
+  const callToActionType =
+    c.call_to_action_type ||
+    linkData?.call_to_action?.type ||
+    videoData?.call_to_action?.type ||
+    null;
+
+  const destinationUrl =
+    linkData?.link ||
+    videoData?.call_to_action?.value?.link ||
+    null;
+
+  // Build IG permalink from the effective story ID when Graph doesn't hand it directly.
+  let instagramPermalinkUrl = c.instagram_permalink_url || null;
+  if (!instagramPermalinkUrl && c.effective_instagram_media_id) {
+    // `effective_instagram_media_id` is an IG post ID; Graph can't turn it into a
+    // public URL without an IG Business token. We leave null and let the UI
+    // fall back to `videoPermalinkUrl` / thumbnail.
+  }
+
+  return {
+    adId,
+    creativeId: c.id ?? null,
+    videoId,
+    videoSourceUrl: null, // filled by fetchVideoMetadata() pass
+    videoPermalinkUrl: null,
+    thumbnailUrl: c.thumbnail_url ?? null,
+    imageUrl: c.image_url ?? null,
+    title,
+    body,
+    callToActionType,
+    destinationUrl,
+    instagramPermalinkUrl,
+    effectiveObjectStoryId: c.effective_object_story_id ?? null,
+  };
+}
+
+/**
+ * Exponential backoff wrapper around `metaFetch` for the creative fetches.
+ * Meta's rate limiter returns specific error codes (4, 17, 613) — we retry up
+ * to 3 times with 1s, 2s, 4s waits. Token/permission errors (190, 200) fail
+ * fast because retrying won't help.
+ */
+async function metaFetchWithRetry<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await metaFetch<T>(endpoint, params);
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message ?? "");
+      // Don't retry auth / permission errors
+      if (msg.includes("code: 190") || msg.includes("code: 200") || msg.includes("code: 10")) {
+        throw err;
+      }
+      const wait = 1000 * 2 ** attempt;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
