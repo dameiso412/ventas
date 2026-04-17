@@ -1841,8 +1841,8 @@ export async function createContactAttempt(data: {
   
   // Update the intentosContacto counter on the lead
   await db.execute(
-    sql`UPDATE leads SET intentosContacto = (
-      SELECT COUNT(*) FROM contact_attempts WHERE leadId = ${data.leadId}
+    sql`UPDATE leads SET "intentosContacto" = (
+      SELECT COUNT(*) FROM contact_attempts WHERE "leadId" = ${data.leadId}
     ) WHERE id = ${data.leadId}`
   );
   
@@ -1862,8 +1862,8 @@ export async function createContactAttempt(data: {
   // Auto-update fechaPrimerContacto: set to earliest contact attempt timestamp
   // This ensures the field always reflects the actual first attempt
   await db.execute(
-    sql`UPDATE leads SET fechaPrimerContacto = (
-      SELECT MIN(timestamp) FROM contact_attempts WHERE leadId = ${data.leadId}
+    sql`UPDATE leads SET "fechaPrimerContacto" = (
+      SELECT MIN(timestamp) FROM contact_attempts WHERE "leadId" = ${data.leadId}
     ) WHERE id = ${data.leadId}`
   );
   
@@ -1905,15 +1905,15 @@ export async function deleteContactAttempt(id: number) {
   
   // Update the counter on the lead
   await db.execute(
-    sql`UPDATE leads SET intentosContacto = (
-      SELECT COUNT(*) FROM contact_attempts WHERE leadId = ${attempt.leadId}
+    sql`UPDATE leads SET "intentosContacto" = (
+      SELECT COUNT(*) FROM contact_attempts WHERE "leadId" = ${attempt.leadId}
     ) WHERE id = ${attempt.leadId}`
   );
-  
+
   // Recalculate fechaPrimerContacto (might change if we deleted the earliest)
   await db.execute(
-    sql`UPDATE leads SET fechaPrimerContacto = (
-      SELECT MIN(timestamp) FROM contact_attempts WHERE leadId = ${attempt.leadId}
+    sql`UPDATE leads SET "fechaPrimerContacto" = (
+      SELECT MIN(timestamp) FROM contact_attempts WHERE "leadId" = ${attempt.leadId}
     ) WHERE id = ${attempt.leadId}`
   );
   
