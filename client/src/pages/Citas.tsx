@@ -653,9 +653,7 @@ export default function Citas() {
                   <span className="text-[10px] text-muted-foreground truncate">
                     {lead.correo || ""}{lead.correo && lead.telefono ? " · " : ""}{lead.telefono || ""}
                   </span>
-                  <button onClick={() => setScorePopupLead(lead)} className="hover:opacity-80 shrink-0">
-                    <ScoreBadge label={lead.scoreLabel} />
-                  </button>
+                  <ContactoBadge resultado={lead.resultadoContacto} />
                   <ResponseTimeCell lead={lead} responseData={responseTimeMap.get(lead.id)} />
                   {alertLeadIds.has(lead.id) && (
                     <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" title="Alerta: <3 intentos después de 48h" />
@@ -673,9 +671,12 @@ export default function Citas() {
                 {isExpanded && (
                   <div className="border-t border-border/20 px-3 py-3 space-y-3 bg-muted/5 rounded-b-lg">
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">Contacto: </span>
                         <ContactoBadge resultado={lead.resultadoContacto} />
+                        <button onClick={() => setScorePopupLead(lead)} className="hover:opacity-80 shrink-0">
+                          <ScoreBadge label={lead.scoreLabel} />
+                        </button>
                       </div>
                       {vista === "AGENDAS" && (
                         <div>

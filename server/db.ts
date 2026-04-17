@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, sql, asc, inArray, isNull, isNotNull, ne, or } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, asc, inArray, isNull, isNotNull, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -170,9 +170,16 @@ export async function getLeads(filters?: {
   if (filters?.categoria) conditions.push(eq(leads.categoria, filters.categoria as any));
   if (filters?.estadoLead) conditions.push(eq(leads.estadoLead, filters.estadoLead as any));
   if (filters?.timeFilter === "proximas") {
-    conditions.push(gte(leads.fecha, new Date()));
+    // Compare against midnight today so appointments that already happened
+    // today (e.g. 9am meeting checked at 3pm) still appear in "próximas"
+    // rather than silently moving to "pasadas" the moment their time passes.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    conditions.push(gte(leads.fecha, startOfToday));
   } else if (filters?.timeFilter === "pasadas") {
-    conditions.push(lte(leads.fecha, new Date()));
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    conditions.push(lt(leads.fecha, startOfToday));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   const order = filters?.timeFilter === "proximas" ? asc(leads.fecha) : desc(leads.fecha);
