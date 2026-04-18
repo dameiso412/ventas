@@ -12,12 +12,13 @@ import { DashboardLayoutSkeleton } from "./components/DashboardLayoutSkeleton";
 import { LEGACY_REDIRECTS } from "./config/navigation";
 import { lazy, Suspense, useEffect } from "react";
 
-// Lazy-loaded section wrappers — 6 top-level sections replace 21 flat routes.
+// Lazy-loaded section wrappers — 7 top-level sections replace 21 flat routes.
 const DashboardSection = lazy(() => import("./pages/dashboard/DashboardSection"));
 const ContactosSection = lazy(() => import("./pages/contactos/ContactosSection"));
 const PerformanceSection = lazy(() => import("./pages/performance/PerformanceSection"));
 const VentasSection = lazy(() => import("./pages/ventas/VentasSection"));
 const MarketingSection = lazy(() => import("./pages/marketing/MarketingSection"));
+const ProspeccionSection = lazy(() => import("./pages/prospeccion/ProspeccionSection"));
 const AdminSection = lazy(() => import("./pages/admin/AdminSection"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -78,6 +79,9 @@ function CRMRouter() {
 
           <Route path="/marketing/:rest*" component={MarketingSection} />
           <Route path="/marketing" component={MarketingSection} />
+
+          <Route path="/prospeccion/:rest*" component={ProspeccionSection} />
+          <Route path="/prospeccion" component={ProspeccionSection} />
 
           <Route path="/admin/:rest*" component={AdminSection} />
           <Route path="/admin" component={AdminSection} />

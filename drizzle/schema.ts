@@ -6,7 +6,10 @@ export const roleEnum = pgEnum("role", ["user", "admin", "setter", "closer"]);
 export const tipoEnum = pgEnum("tipo", ["DEMO", "INTRO"]);
 export const categoriaEnum = pgEnum("categoria", ["AGENDA", "LEAD"]);
 export const origenEnum = pgEnum("origen", ["ADS", "REFERIDO", "ORGANICO", "INSTAGRAM"]);
-export const igFunnelStageEnum = pgEnum("ig_funnel_stage", ["NUEVO_SEGUIDOR", "DM_ENVIADO", "EN_CONVERSACION", "CALIFICADO", "AGENDA_ENVIADA", "AGENDA_RESERVADA", "DESCARTADO"]);
+// DM_VISTO ("Message Seen") sits between DM_ENVIADO and EN_CONVERSACION — it's
+// the ✓✓ double-blue state from the Cold DM System methodology, required so we
+// can compute MSR (Message Seen Rate) as MS / A at the lead level.
+export const igFunnelStageEnum = pgEnum("ig_funnel_stage", ["NUEVO_SEGUIDOR", "DM_ENVIADO", "DM_VISTO", "EN_CONVERSACION", "CALIFICADO", "AGENDA_ENVIADA", "AGENDA_RESERVADA", "DESCARTADO"]);
 export const estadoLeadEnum = pgEnum("estado_lead", ["NUEVO", "CONTACTADO", "CALIFICADO", "DESCARTADO", "CONVERTIDO_AGENDA"]);
 export const resultadoContactoEnum = pgEnum("resultado_contacto", ["CONTESTÓ", "NO CONTESTÓ", "BUZÓN", "NÚMERO INVÁLIDO", "WHATSAPP LIMPIADO", "PENDIENTE"]);
 export const siNoEnum = pgEnum("si_no", ["SÍ", "NO"]);
@@ -207,12 +210,24 @@ export const setterActivities = pgTable("setter_activities", {
   cierresAtribuidos: integer("cierresAtribuidos").default(0),
   revenueAtribuido: decimal("revenueAtribuido", { precision: 10, scale: 2 }).default("0"),
   cashAtribuido: decimal("cashAtribuido", { precision: 10, scale: 2 }).default("0"),
-  // Instagram DM metrics
+  // Instagram DM metrics — Cold DM System funnel A→MS→B→C→D
+  // igConversacionesIniciadas = A  (DMs Trojan Horse enviados)
+  // igMensajesVistos          = MS (✓✓ azul / double-blue seen)
+  // igRespuestasRecibidas     = respuestas totales (positivas + negativas, uso interno)
+  // igCalificados             = B  (respuesta positiva / permiso)
+  // igAgendasEnviadas         = C  (Calendly enviado)
+  // igAgendasReservadas       = D  (cita reservada)
   igConversacionesIniciadas: integer("igConversacionesIniciadas").default(0),
+  igMensajesVistos: integer("igMensajesVistos").default(0),
   igRespuestasRecibidas: integer("igRespuestasRecibidas").default(0),
   igCalificados: integer("igCalificados").default(0),
   igAgendasEnviadas: integer("igAgendasEnviadas").default(0),
   igAgendasReservadas: integer("igAgendasReservadas").default(0),
+  // Warming activity (sanity-check vs IG daily limits) + CAR (Connection Accept Rate)
+  igFollowsEnviados: integer("igFollowsEnviados").default(0),
+  igFollowsAceptados: integer("igFollowsAceptados").default(0),
+  igLikesEnviados: integer("igLikesEnviados").default(0),
+  igComentariosEnviados: integer("igComentariosEnviados").default(0),
   // Notas
   notas: text("notas"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -966,3 +981,29 @@ export const systemConfig = pgTable("system_config", {
 
 export type SystemConfig = typeof systemConfig.$inferSelect;
 export type InsertSystemConfig = typeof systemConfig.$inferInsert;
+
+/**
+ * Prospecting goals — global, admin-editable configuration for the IG Cold DM
+ * System. Drives the Tablero semáforo (traffic-light KPI status) and the daily
+ * volume targets shown in the Rutina page. Seeded with the doc's recommended
+ * minimums (MSR ≥40%, PRR ≥6%, etc.) and daily limits (30 DMs, 50 follows, …).
+ *
+ * `unit`:     "count" for absolute daily targets, "percent" for KPI thresholds
+ *             (stored as whole numbers — 40 means 40%, not 0.4).
+ * `category`: "daily_volume" | "kpi_threshold" — drives the UI grouping in
+ *             /prospeccion/metas.
+ */
+export const prospectingGoals = pgTable("prospecting_goals", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 50 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(),
+  unit: varchar("unit", { length: 20 }).notNull(),
+  category: varchar("category", { length: 30 }).notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+});
+
+export type ProspectingGoal = typeof prospectingGoals.$inferSelect;
+export type InsertProspectingGoal = typeof prospectingGoals.$inferInsert;

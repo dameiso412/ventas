@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, adminProcedure, crmProcedure } from "./_core/trpc";
+import { publicProcedure, router, adminProcedure, crmProcedure, setterProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1";
@@ -336,11 +336,18 @@ export const appRouter = router({
         revenueAtribuido: z.string().optional(),
         cashAtribuido: z.string().optional(),
         notas: z.string().optional(),
+        // IG funnel counts — Cold DM System A→MS→B→C→D
         igConversacionesIniciadas: z.number().min(0).optional(),
+        igMensajesVistos: z.number().min(0).optional(),
         igRespuestasRecibidas: z.number().min(0).optional(),
         igCalificados: z.number().min(0).optional(),
         igAgendasEnviadas: z.number().min(0).optional(),
         igAgendasReservadas: z.number().min(0).optional(),
+        // Warming activity
+        igFollowsEnviados: z.number().min(0).optional(),
+        igFollowsAceptados: z.number().min(0).optional(),
+        igLikesEnviados: z.number().min(0).optional(),
+        igComentariosEnviados: z.number().min(0).optional(),
       }))
       .mutation(async ({ input }) => {
         const id = await db.createSetterActivity(input as any);
@@ -376,6 +383,111 @@ export const appRouter = router({
         semana: z.number().optional(),
       }).optional())
       .query(({ input }) => db.getSetterLeaderboard(input ?? undefined)),
+
+    /**
+     * Fetch single row by (setter, fecha). Returns null if the setter hasn't
+     * submitted anything for that date yet. Used by the Rutina AM/PM page
+     * to pre-populate the form.
+     */
+    byDate: setterProcedure
+      .input(z.object({
+        setter: z.string().min(1),
+        fecha: z.date(),
+      }))
+      .query(({ input }) => db.getSetterActivityByDate(input)),
+
+    /**
+     * Upsert-merge for the Rutina AM/PM page. Updates only the fields provided
+     * — existing AM fields stay intact when PM fills in later (or vice versa).
+     * Requires (fecha, setter) unique index from migration 0008.
+     */
+    upsert: setterProcedure
+      .input(z.object({
+        fecha: z.date(),
+        mes: z.string().optional(),
+        semana: z.number().optional(),
+        setter: z.string().min(1),
+        // All metric fields are optional so AM and PM submissions can be partial
+        intentosLlamada: z.number().min(0).max(200).optional(),
+        introsEfectivas: z.number().min(0).max(200).optional(),
+        demosAseguradasConIntro: z.number().min(0).max(100).optional(),
+        demosEnCalendario: z.number().min(0).max(100).optional(),
+        demosConfirmadas: z.number().min(0).max(100).optional(),
+        demosAsistidas: z.number().min(0).max(100).optional(),
+        introAgendadas: z.number().min(0).max(100).optional(),
+        introLive: z.number().min(0).max(100).optional(),
+        introADemo: z.number().min(0).max(100).optional(),
+        cierresAtribuidos: z.number().min(0).max(100).optional(),
+        revenueAtribuido: z.string().optional(),
+        cashAtribuido: z.string().optional(),
+        notas: z.string().optional(),
+        igConversacionesIniciadas: z.number().min(0).optional(),
+        igMensajesVistos: z.number().min(0).optional(),
+        igRespuestasRecibidas: z.number().min(0).optional(),
+        igCalificados: z.number().min(0).optional(),
+        igAgendasEnviadas: z.number().min(0).optional(),
+        igAgendasReservadas: z.number().min(0).optional(),
+        igFollowsEnviados: z.number().min(0).optional(),
+        igFollowsAceptados: z.number().min(0).optional(),
+        igLikesEnviados: z.number().min(0).optional(),
+        igComentariosEnviados: z.number().min(0).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Normalize to start-of-day so (fecha, setter) is deterministic
+        const fecha = new Date(input.fecha);
+        fecha.setHours(0, 0, 0, 0);
+        const id = await db.upsertSetterActivity({ ...input, fecha } as any);
+        return { id };
+      }),
+  }),
+
+  // ==================== PROSPECTING (Cold DM System IG) ====================
+  // Consolidates the IG prospecting ecosystem — funnel metrics, goals config,
+  // and (future phases) daily routine + doctor + tracker. Uses setter_activities
+  // as the source of daily aggregates and prospecting_goals for thresholds.
+  prospecting: router({
+    /**
+     * 5 KPIs + volume counts for the Tablero. Returns {a, ms, b, c, d, ...}
+     * plus {msr, prr, csr, abr, car} as 0-100 floats (null when denom is 0).
+     */
+    funnelMetrics: setterProcedure
+      .input(z.object({
+        setter: z.string().optional(),
+        dateFrom: z.union([z.date(), z.string()]).optional(),
+        dateTo: z.union([z.date(), z.string()]).optional(),
+      }).optional())
+      .query(({ input }) => db.getProspectingFunnelMetrics(input ?? undefined)),
+
+    /**
+     * Per-month aggregate for a calendar year. Returns 12 rows (Jan..Dec) with
+     * zero-fills for empty months plus a `total` row. Used by the Fase 4 Tracker
+     * to render the 12-column × N-row matrix.
+     */
+    monthlyBreakdown: setterProcedure
+      .input(z.object({
+        year: z.number().int().min(2000).max(2100),
+        setter: z.string().optional(),
+      }))
+      .query(({ input }) => db.getProspectingMonthlyBreakdown(input)),
+
+    /** List all goals (both daily_volume and kpi_threshold). Read-only for setters. */
+    listGoals: setterProcedure
+      .query(() => db.listProspectingGoals()),
+
+    /** Admin-only: update a goal's value. Key must already exist in the seed. */
+    updateGoal: adminProcedure
+      .input(z.object({
+        key: z.string().min(1).max(50),
+        value: z.number().min(0).max(1000000),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.updateProspectingGoal({
+          key: input.key,
+          value: input.value,
+          updatedBy: ctx.user?.email ?? ctx.user?.name ?? undefined,
+        });
+        return { success: true };
+      }),
   }),
 
   // ==================== CLOSER ACTIVITIES ====================

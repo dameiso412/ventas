@@ -31,6 +31,7 @@ import {
   stripePayments, InsertStripePayment, StripePayment,
   stripeWebhookLogs, InsertStripeWebhookLog,
   systemConfig,
+  prospectingGoals, ProspectingGoal, InsertProspectingGoal,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAdSpendDivisor } from './_core/exchange-rate';
@@ -318,6 +319,41 @@ export async function createSetterActivity(activity: InsertSetterActivity) {
   return result.id;
 }
 
+/**
+ * Upsert-merge for the Rutina AM/PM page. Targets the unique (fecha, setter)
+ * index (migration 0008) so a setter can fill AM inputs in the morning and PM
+ * inputs in the evening without one overwriting the other — only fields that
+ * are explicitly present in `activity` are updated. Fields omitted are left
+ * untouched on existing rows.
+ *
+ * IMPORTANT: callers must normalize `fecha` to start-of-day (00:00) before
+ * invoking, otherwise two different timestamps on the same date will produce
+ * two rows.
+ */
+export async function upsertSetterActivity(activity: InsertSetterActivity): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Only the fields actually provided in `activity` are promoted to the DO UPDATE
+  // set clause. Using a stripped payload (minus identifying keys) keeps any
+  // unspecified column intact on conflict — critical for AM+PM merge.
+  const { fecha, setter, ...updatableFields } = activity;
+  const updateSet: Record<string, any> = { updatedAt: new Date() };
+  for (const [k, v] of Object.entries(updatableFields)) {
+    if (v !== undefined) updateSet[k] = v;
+  }
+
+  const [result] = await db.insert(setterActivities)
+    .values(activity)
+    .onConflictDoUpdate({
+      target: [setterActivities.fecha, setterActivities.setter],
+      set: updateSet,
+    })
+    .returning({ id: setterActivities.id });
+
+  return result.id;
+}
+
 export async function getSetterActivities(filters?: {
   setter?: string;
   mes?: string;
@@ -331,6 +367,30 @@ export async function getSetterActivities(filters?: {
   if (filters?.semana) conditions.push(eq(setterActivities.semana, filters.semana));
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(setterActivities).where(where).orderBy(desc(setterActivities.fecha));
+}
+
+/**
+ * Fetch the single row matching (setter, fecha) — used by the Rutina page to
+ * pre-populate AM/PM inputs with whatever the setter already saved today.
+ * `fecha` is normalized to start-of-day (00:00) before querying so the range
+ * filter aligns with how upsertSetterActivity stores rows.
+ */
+export async function getSetterActivityByDate(input: {
+  setter: string;
+  fecha: Date | string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const dayStart = new Date(input.fecha);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(23, 59, 59, 999);
+  const rows = await db.select().from(setterActivities).where(and(
+    eq(setterActivities.setter, input.setter),
+    gte(setterActivities.fecha, dayStart),
+    lte(setterActivities.fecha, dayEnd),
+  )).limit(1);
+  return rows[0] ?? null;
 }
 
 export async function updateSetterActivity(id: number, data: Partial<InsertSetterActivity>) {
@@ -4050,6 +4110,272 @@ export async function getSetterIgPerformance(filters?: { mes?: string; semana?: 
     igAgendasEnviadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasEnviadas}), 0)`,
     igAgendasReservadas: sql<number>`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0)`,
   }).from(setterActivities).where(where).groupBy(setterActivities.setter).orderBy(sql`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0) DESC`);
+}
+
+// ==================== PROSPECTING (Cold DM System) ====================
+// These functions power the /prospeccion section — the consolidated IG
+// prospecting dashboard, goals config, and monthly tracker.
+//
+// The 5 KPIs mapped from the Cold DM System doc:
+//   MSR (Message Seen Rate)        = MS / A   — ≥40% baseline
+//   PRR (Positive Reply Rate)      = B  / MS  — ≥6%  baseline
+//   CSR (Calendly Sent Rate)       = C  / A   — ≥3%  baseline
+//   ABR (Appointment Booked Rate)  = D  / A   — ≥2%  baseline
+//   CAR (Connection Accept Rate)   = FollowsAceptados / FollowsEnviados — ≥50%
+//
+// Where A = igConversacionesIniciadas, MS = igMensajesVistos,
+//       B = igCalificados,  C = igAgendasEnviadas, D = igAgendasReservadas.
+
+export type ProspectingFunnelMetrics = {
+  a: number;   // Initiated (DMs Trojan Horse enviados)
+  ms: number;  // Message Seen
+  b: number;   // Positive reply / interested
+  c: number;   // Calendly Sent
+  d: number;   // Booked
+  followsSent: number;
+  followsAccepted: number;
+  likes: number;
+  comments: number;
+  msr: number | null;  // percent 0-100, null if denom is 0
+  prr: number | null;
+  csr: number | null;
+  abr: number | null;
+  car: number | null;
+};
+
+function ratioOrNull(num: number, denom: number): number | null {
+  if (!denom || denom <= 0) return null;
+  return Number(((num / denom) * 100).toFixed(2));
+}
+
+/**
+ * Aggregate the 5 IG prospecting KPIs + volume counts over a date window,
+ * optionally filtered to a single setter. Ratios are returned as 0-100 floats
+ * with 2 decimals, or null when the denominator is 0 (so UI can show "—").
+ */
+export async function getProspectingFunnelMetrics(filters?: {
+  setter?: string;
+  dateFrom?: Date | string;
+  dateTo?: Date | string;
+}): Promise<ProspectingFunnelMetrics> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions: any[] = [];
+  if (filters?.setter) conditions.push(eq(setterActivities.setter, filters.setter));
+  if (filters?.dateFrom) conditions.push(gte(setterActivities.fecha, new Date(filters.dateFrom)));
+  if (filters?.dateTo) conditions.push(lte(setterActivities.fecha, new Date(filters.dateTo)));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db.select({
+    a:   sql<number>`COALESCE(SUM(${setterActivities.igConversacionesIniciadas}), 0)`,
+    ms:  sql<number>`COALESCE(SUM(${setterActivities.igMensajesVistos}), 0)`,
+    b:   sql<number>`COALESCE(SUM(${setterActivities.igCalificados}), 0)`,
+    c:   sql<number>`COALESCE(SUM(${setterActivities.igAgendasEnviadas}), 0)`,
+    d:   sql<number>`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0)`,
+    followsSent:     sql<number>`COALESCE(SUM(${setterActivities.igFollowsEnviados}), 0)`,
+    followsAccepted: sql<number>`COALESCE(SUM(${setterActivities.igFollowsAceptados}), 0)`,
+    likes:    sql<number>`COALESCE(SUM(${setterActivities.igLikesEnviados}), 0)`,
+    comments: sql<number>`COALESCE(SUM(${setterActivities.igComentariosEnviados}), 0)`,
+  }).from(setterActivities).where(where);
+
+  const r = rows[0];
+  const a = Number(r?.a ?? 0);
+  const ms = Number(r?.ms ?? 0);
+  const b = Number(r?.b ?? 0);
+  const c = Number(r?.c ?? 0);
+  const d = Number(r?.d ?? 0);
+  const followsSent = Number(r?.followsSent ?? 0);
+  const followsAccepted = Number(r?.followsAccepted ?? 0);
+  const likes = Number(r?.likes ?? 0);
+  const comments = Number(r?.comments ?? 0);
+
+  return {
+    a, ms, b, c, d,
+    followsSent, followsAccepted, likes, comments,
+    msr: ratioOrNull(ms, a),
+    prr: ratioOrNull(b,  ms),
+    csr: ratioOrNull(c,  a),
+    abr: ratioOrNull(d,  a),
+    car: ratioOrNull(followsAccepted, followsSent),
+  };
+}
+
+/**
+ * Per-month aggregate of prospecting activity for a given calendar year. Returns
+ * 12 entries (Jan…Dec) always — missing months come back as all-zero rows so the
+ * UI can render a fixed 12-column matrix without client-side gap-filling.
+ *
+ * Adds two transition ratios that the Fase 4 tracker needs beyond the 5 core KPIs:
+ *   bToC (C / B) and cToD (D / C). These are useful when diagnosing where the
+ *   funnel is leaking between intermediate stages.
+ */
+export type ProspectingMonthBreakdown = {
+  month: number; // 1..12
+  a: number;
+  ms: number;
+  b: number;
+  c: number;
+  d: number;
+  followsSent: number;
+  followsAccepted: number;
+  likes: number;
+  comments: number;
+  msr: number | null;  // MS / A
+  prr: number | null;  // B / MS
+  csr: number | null;  // C / A
+  abr: number | null;  // D / A
+  car: number | null;  // followsAcc / followsSent
+  bToC: number | null; // C / B
+  cToD: number | null; // D / C
+};
+
+export type ProspectingYearBreakdown = {
+  year: number;
+  months: ProspectingMonthBreakdown[]; // always length 12
+  total: ProspectingMonthBreakdown;    // month = 0 sentinel
+};
+
+export async function getProspectingMonthlyBreakdown(input: {
+  year: number;
+  setter?: string;
+}): Promise<ProspectingYearBreakdown> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const yearStart = new Date(input.year, 0, 1, 0, 0, 0, 0);
+  const yearEnd = new Date(input.year + 1, 0, 1, 0, 0, 0, 0);
+
+  const conditions: any[] = [
+    gte(setterActivities.fecha, yearStart),
+    lt(setterActivities.fecha, yearEnd),
+  ];
+  if (input.setter) conditions.push(eq(setterActivities.setter, input.setter));
+
+  const rows = await db.select({
+    month:           sql<number>`EXTRACT(MONTH FROM ${setterActivities.fecha})::int`,
+    a:               sql<number>`COALESCE(SUM(${setterActivities.igConversacionesIniciadas}), 0)`,
+    ms:              sql<number>`COALESCE(SUM(${setterActivities.igMensajesVistos}), 0)`,
+    b:               sql<number>`COALESCE(SUM(${setterActivities.igCalificados}), 0)`,
+    c:               sql<number>`COALESCE(SUM(${setterActivities.igAgendasEnviadas}), 0)`,
+    d:               sql<number>`COALESCE(SUM(${setterActivities.igAgendasReservadas}), 0)`,
+    followsSent:     sql<number>`COALESCE(SUM(${setterActivities.igFollowsEnviados}), 0)`,
+    followsAccepted: sql<number>`COALESCE(SUM(${setterActivities.igFollowsAceptados}), 0)`,
+    likes:           sql<number>`COALESCE(SUM(${setterActivities.igLikesEnviados}), 0)`,
+    comments:        sql<number>`COALESCE(SUM(${setterActivities.igComentariosEnviados}), 0)`,
+  })
+    .from(setterActivities)
+    .where(and(...conditions))
+    .groupBy(sql`EXTRACT(MONTH FROM ${setterActivities.fecha})`)
+    .orderBy(sql`EXTRACT(MONTH FROM ${setterActivities.fecha})`);
+
+  // Index by month for O(1) lookup while filling gaps.
+  const byMonth = new Map<number, (typeof rows)[number]>();
+  for (const r of rows) byMonth.set(Number(r.month), r);
+
+  const monthToBreakdown = (month: number, r: (typeof rows)[number] | undefined): ProspectingMonthBreakdown => {
+    const a = Number(r?.a ?? 0);
+    const ms = Number(r?.ms ?? 0);
+    const b = Number(r?.b ?? 0);
+    const c = Number(r?.c ?? 0);
+    const d = Number(r?.d ?? 0);
+    const followsSent = Number(r?.followsSent ?? 0);
+    const followsAccepted = Number(r?.followsAccepted ?? 0);
+    const likes = Number(r?.likes ?? 0);
+    const comments = Number(r?.comments ?? 0);
+    return {
+      month,
+      a, ms, b, c, d,
+      followsSent, followsAccepted, likes, comments,
+      msr:  ratioOrNull(ms, a),
+      prr:  ratioOrNull(b,  ms),
+      csr:  ratioOrNull(c,  a),
+      abr:  ratioOrNull(d,  a),
+      car:  ratioOrNull(followsAccepted, followsSent),
+      bToC: ratioOrNull(c,  b),
+      cToD: ratioOrNull(d,  c),
+    };
+  };
+
+  const months: ProspectingMonthBreakdown[] = [];
+  // Accumulate totals as we iterate so we avoid a second query.
+  let totA = 0, totMs = 0, totB = 0, totC = 0, totD = 0;
+  let totFs = 0, totFa = 0, totLikes = 0, totComments = 0;
+  for (let m = 1; m <= 12; m++) {
+    const breakdown = monthToBreakdown(m, byMonth.get(m));
+    months.push(breakdown);
+    totA += breakdown.a;
+    totMs += breakdown.ms;
+    totB += breakdown.b;
+    totC += breakdown.c;
+    totD += breakdown.d;
+    totFs += breakdown.followsSent;
+    totFa += breakdown.followsAccepted;
+    totLikes += breakdown.likes;
+    totComments += breakdown.comments;
+  }
+  const total: ProspectingMonthBreakdown = {
+    month: 0,
+    a: totA, ms: totMs, b: totB, c: totC, d: totD,
+    followsSent: totFs, followsAccepted: totFa,
+    likes: totLikes, comments: totComments,
+    msr:  ratioOrNull(totMs, totA),
+    prr:  ratioOrNull(totB,  totMs),
+    csr:  ratioOrNull(totC,  totA),
+    abr:  ratioOrNull(totD,  totA),
+    car:  ratioOrNull(totFa, totFs),
+    bToC: ratioOrNull(totC,  totB),
+    cToD: ratioOrNull(totD,  totC),
+  };
+
+  return { year: input.year, months, total };
+}
+
+/** List all prospecting goals, sorted by category then key for stable UI. */
+export async function listProspectingGoals(): Promise<ProspectingGoal[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(prospectingGoals).orderBy(asc(prospectingGoals.category), asc(prospectingGoals.key));
+}
+
+/** Get a single goal by key. Returns null if missing (seed incomplete). */
+export async function getProspectingGoal(key: string): Promise<ProspectingGoal | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(prospectingGoals).where(eq(prospectingGoals.key, key)).limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Update a goal value by key. Stamps updatedAt and updatedBy for audit. Does
+ * NOT allow creation of new keys via this function — new keys must be added
+ * via migration seed so the categories stay canonical.
+ */
+export async function updateProspectingGoal(input: {
+  key: string;
+  value: string | number;
+  updatedBy?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const val = typeof input.value === "number" ? input.value.toString() : input.value;
+  await db.update(prospectingGoals)
+    .set({ value: val, updatedAt: new Date(), updatedBy: input.updatedBy })
+    .where(eq(prospectingGoals.key, input.key));
+}
+
+/**
+ * Read all goals and return a simple key→number map for quick Tablero lookup.
+ * Values are stored as numeric strings in Postgres; we parseFloat at the edge.
+ */
+export async function getProspectingGoalsMap(): Promise<Record<string, number>> {
+  const rows = await listProspectingGoals();
+  const out: Record<string, number> = {};
+  for (const g of rows) {
+    const parsed = parseFloat(String(g.value));
+    if (Number.isFinite(parsed)) out[g.key] = parsed;
+  }
+  return out;
 }
 
 // ==================== SYSTEM CONFIG ====================

@@ -1255,6 +1255,7 @@ webhookRouter.get("/api/webhook/logs", async (req: Request, res: Response) => {
 const IG_FUNNEL_ORDER = [
   "NUEVO_SEGUIDOR",
   "DM_ENVIADO",
+  "DM_VISTO",        // Cold DM System: MS (double-blue ✓✓ received)
   "EN_CONVERSACION",
   "CALIFICADO",
   "AGENDA_ENVIADA",
@@ -1269,6 +1270,11 @@ function igStageIndex(stage: string | null | undefined): number {
 }
 
 const TAG_TO_STAGE: Record<string, IgFunnelStage> = {
+  // Standard ManyChat tag → funnel stage mapping. ManyChat Flow Builder adds
+  // these tags automatically when a setter moves a subscriber through the flow.
+  dm_visto: "DM_VISTO",         // Optional — setter-fired tag for manual MS capture.
+  mensaje_visto: "DM_VISTO",    // Alias.
+  message_seen: "DM_VISTO",     // Alias (EN).
   calificado: "CALIFICADO",
   agenda_enviada: "AGENDA_ENVIADA",
   agenda_reservada: "AGENDA_RESERVADA",
@@ -1289,6 +1295,36 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
       });
     } catch (logErr: any) {
       console.error("[Webhook:ManyChat] Failed to log event (non-fatal):", logErr.message);
+    }
+
+    // --- DM SEEN EVENT (best-effort) ---
+    // ManyChat does not have a first-class "message seen" webhook event, but
+    // integrations sometimes forward it via External Request with type =
+    // "message_seen" / "dm_seen" / "seen". If detected, we advance the lead to
+    // DM_VISTO so MSR (Message Seen Rate) can be computed from lead state.
+    // The setter-level igMensajesVistos counter is updated via the Rutina PM
+    // fallback (Fase 3) — we don't touch it here to avoid double-counting.
+    const seenEventTypes = ["message_seen", "dm_seen", "seen", "messaging_seen"];
+    const payloadType = typeof payload.type === "string" ? payload.type.toLowerCase() : null;
+    const isSeenEvent = payloadType && seenEventTypes.includes(payloadType);
+    if (isSeenEvent) {
+      const subscriberId = payload.subscriber_id || payload.id;
+      if (!subscriberId) {
+        console.error("[Webhook:ManyChat] dm_seen event missing subscriber_id");
+        return res.status(200).json({ success: true, action: "no_subscriber_id" });
+      }
+      const lead = await db.findLeadByManychatId(String(subscriberId));
+      if (!lead) {
+        console.log(`[Webhook:ManyChat] dm_seen: no lead found for subscriber ${subscriberId}`);
+        return res.status(200).json({ success: true, action: "lead_not_found" });
+      }
+      const currentIdx = igStageIndex(lead.igFunnelStage);
+      const newIdx = igStageIndex("DM_VISTO");
+      if (newIdx > currentIdx) {
+        await db.updateLead(lead.id, { igFunnelStage: "DM_VISTO" });
+        console.log(`[Webhook:ManyChat] Lead #${lead.id} advanced to DM_VISTO via ${payloadType} event`);
+      }
+      return res.status(200).json({ success: true, action: "dm_seen_processed", leadId: lead.id });
     }
 
     // --- TAG ADDED ---

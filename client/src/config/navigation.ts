@@ -34,6 +34,11 @@ import {
   Bell,
   Webhook,
   FileSearch,
+  Send,
+  Stethoscope,
+  TableProperties,
+  Gauge,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import type { CrmRole } from "@shared/permissions";
@@ -123,6 +128,22 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Scoring IA", path: "/marketing/scoring", icon: Star, roles: ALL_ROLES },
       { label: "Diagnóstico", path: "/marketing/diagnostico", icon: Activity, roles: ADMIN_ONLY },
       { label: "Auditoría", path: "/marketing/auditoria", icon: Headphones, roles: ADMIN_CLOSER },
+    ],
+  },
+  {
+    // Prospección — Cold DM System sobre Instagram. Consolida funnel A→MS→B→C→D,
+    // rutina diaria del setter, tracker histórico, doctor de KPIs y metas globales
+    // (umbrales + volúmenes diarios). Gated a admin+setter.
+    label: "Prospección",
+    basePath: "/prospeccion",
+    icon: Send,
+    defaultPath: "/prospeccion/tablero",
+    subTabs: [
+      { label: "Tablero",   path: "/prospeccion/tablero", icon: Gauge,           roles: ADMIN_SETTER },
+      { label: "Rutina",    path: "/prospeccion/rutina",  icon: ClipboardList,   roles: ADMIN_SETTER },
+      { label: "Tracker",   path: "/prospeccion/tracker", icon: TableProperties, roles: ADMIN_SETTER },
+      { label: "Doctor",    path: "/prospeccion/doctor",  icon: Stethoscope,     roles: ADMIN_SETTER, comingSoon: true },
+      { label: "Metas",     path: "/prospeccion/metas",   icon: Settings,        roles: ADMIN_ONLY,   comingSoon: true },
     ],
   },
   {
