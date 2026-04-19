@@ -488,6 +488,42 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+
+    /**
+     * Doctor — troubleshooting reactivo. Sub-router:
+     *   - submit:  persist a new review (KPI + causes ticked + notes)
+     *   - history: list recent reviews for the current setter (or all, admin)
+     */
+    doctor: router({
+      submit: setterProcedure
+        .input(z.object({
+          setterName: z.string().min(1).max(255),
+          metric: z.enum(["msr", "prr", "csr", "abr", "car"]),
+          valueAtReview: z.number().nullable(),
+          thresholdAtReview: z.number().nullable(),
+          causesChecked: z.record(z.string(), z.boolean()),
+          notes: z.string().max(2000).optional(),
+        }))
+        .mutation(async ({ input }) => {
+          const id = await db.createDoctorReview({
+            setterName: input.setterName,
+            metric: input.metric,
+            valueAtReview: input.valueAtReview,
+            thresholdAtReview: input.thresholdAtReview,
+            causesChecked: input.causesChecked,
+            notes: input.notes ?? null,
+          });
+          return { id };
+        }),
+
+      history: setterProcedure
+        .input(z.object({
+          setterName: z.string().optional(),
+          metric: z.enum(["msr", "prr", "csr", "abr", "car"]).optional(),
+          limit: z.number().int().min(1).max(200).optional(),
+        }).optional())
+        .query(({ input }) => db.listDoctorReviews(input ?? undefined)),
+    }),
   }),
 
   // ==================== CLOSER ACTIVITIES ====================

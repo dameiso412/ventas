@@ -32,6 +32,7 @@ import {
   stripeWebhookLogs, InsertStripeWebhookLog,
   systemConfig,
   prospectingGoals, ProspectingGoal, InsertProspectingGoal,
+  prospectingDoctorReviews, ProspectingDoctorReview, InsertProspectingDoctorReview,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAdSpendDivisor } from './_core/exchange-rate';
@@ -4376,6 +4377,55 @@ export async function getProspectingGoalsMap(): Promise<Record<string, number>> 
     if (Number.isFinite(parsed)) out[g.key] = parsed;
   }
   return out;
+}
+
+/**
+ * Create a new doctor review — one per troubleshooting session. Caller is
+ * responsible for computing the value + threshold at review time and building
+ * the causesChecked jsonb map from the checklist the user completed.
+ */
+export async function createDoctorReview(input: {
+  setterName: string;
+  metric: "msr" | "prr" | "csr" | "abr" | "car";
+  valueAtReview: number | null;
+  thresholdAtReview: number | null;
+  causesChecked: Record<string, boolean>;
+  notes?: string | null;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.insert(prospectingDoctorReviews).values({
+    setterName: input.setterName,
+    metric: input.metric,
+    valueAtReview: input.valueAtReview === null ? null : input.valueAtReview.toFixed(2),
+    thresholdAtReview: input.thresholdAtReview === null ? null : input.thresholdAtReview.toFixed(2),
+    causesChecked: input.causesChecked,
+    notes: input.notes ?? null,
+  }).returning({ id: prospectingDoctorReviews.id });
+  return rows[0].id;
+}
+
+/**
+ * List recent doctor reviews, most recent first. Filters optional — when
+ * nothing is passed we return the last 50 reviews across all setters/metrics.
+ * Used by the Doctor history accordion.
+ */
+export async function listDoctorReviews(input?: {
+  setterName?: string;
+  metric?: "msr" | "prr" | "csr" | "abr" | "car";
+  limit?: number;
+}): Promise<ProspectingDoctorReview[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions: any[] = [];
+  if (input?.setterName) conditions.push(eq(prospectingDoctorReviews.setterName, input.setterName));
+  if (input?.metric) conditions.push(eq(prospectingDoctorReviews.metric, input.metric));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return db.select()
+    .from(prospectingDoctorReviews)
+    .where(where)
+    .orderBy(desc(prospectingDoctorReviews.reviewedAt))
+    .limit(input?.limit ?? 50);
 }
 
 // ==================== SYSTEM CONFIG ====================

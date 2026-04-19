@@ -1007,3 +1007,38 @@ export const prospectingGoals = pgTable("prospecting_goals", {
 
 export type ProspectingGoal = typeof prospectingGoals.$inferSelect;
 export type InsertProspectingGoal = typeof prospectingGoals.$inferInsert;
+
+/**
+ * Prospecting doctor reviews — each time a setter (or admin) consults the
+ * Doctor for a KPI that fell below threshold, we persist the troubleshooting
+ * session here. Gives us:
+ *   1. An audit trail of "I checked why MSR was low on 2026-04-18 and marked
+ *      these 3 causes — here are my notes."
+ *   2. Data for a future insight: which causes correlate with KPI recovery?
+ *
+ * `metric`:         one of "msr" | "prr" | "csr" | "abr" | "car"
+ * `valueAtReview`:  the KPI value at the moment of review (0-100 percent).
+ *                   Stored so we know the severity without recomputing.
+ * `causesChecked`:  jsonb map of { causeId: boolean } derived from the
+ *                   hard-coded checklist per KPI (doc 3). Keys like
+ *                   "niche_active", "lead_quality", "account_health", etc.
+ * `notes`:          free-text notes from the setter ("switched to a new
+ *                   niche last week, account is 3 days warm").
+ */
+export const prospectingDoctorReviews = pgTable("prospecting_doctor_reviews", {
+  id: serial("id").primaryKey(),
+  setterName: varchar("setterName", { length: 255 }).notNull(),
+  metric: varchar("metric", { length: 10 }).notNull(),
+  valueAtReview: decimal("valueAtReview", { precision: 6, scale: 2 }),
+  thresholdAtReview: decimal("thresholdAtReview", { precision: 6, scale: 2 }),
+  causesChecked: jsonb("causesChecked").notNull(),
+  notes: text("notes"),
+  reviewedAt: timestamp("reviewedAt").defaultNow().notNull(),
+}, (table) => ({
+  setterIdx: index("idx_doctor_reviews_setter").on(table.setterName),
+  metricIdx: index("idx_doctor_reviews_metric").on(table.metric),
+  reviewedAtIdx: index("idx_doctor_reviews_reviewed_at").on(table.reviewedAt),
+}));
+
+export type ProspectingDoctorReview = typeof prospectingDoctorReviews.$inferSelect;
+export type InsertProspectingDoctorReview = typeof prospectingDoctorReviews.$inferInsert;

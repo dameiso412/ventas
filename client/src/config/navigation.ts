@@ -142,7 +142,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Tablero",   path: "/prospeccion/tablero", icon: Gauge,           roles: ADMIN_SETTER },
       { label: "Rutina",    path: "/prospeccion/rutina",  icon: ClipboardList,   roles: ADMIN_SETTER },
       { label: "Tracker",   path: "/prospeccion/tracker", icon: TableProperties, roles: ADMIN_SETTER },
-      { label: "Doctor",    path: "/prospeccion/doctor",  icon: Stethoscope,     roles: ADMIN_SETTER, comingSoon: true },
+      { label: "Doctor",    path: "/prospeccion/doctor",  icon: Stethoscope,     roles: ADMIN_SETTER },
       { label: "Metas",     path: "/prospeccion/metas",   icon: Settings,        roles: ADMIN_ONLY,   comingSoon: true },
     ],
   },
