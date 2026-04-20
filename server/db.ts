@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, lt, sql, asc, inArray, isNull, isNotNull, ne, or } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, sql, asc, inArray, notInArray, isNull, isNotNull, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -496,8 +496,16 @@ const MESES_ARRAY = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
 /**
  * Aggregate ad metrics from ad_metrics_daily for a given month.
  * This is the source of truth for ad spend — uses real Meta Ads data synced daily by CronSync.
+ *
+ * `excludedCampaignIds` permite al dashboard descartar campañas no representativas
+ * del call funnel (ej. tráfico / awareness / lead-gen paralelo). El filtro se aplica
+ * a la suma: spend, leads, impressions, clicks — todo baja de forma consistente.
  */
-export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
+export async function aggregateAdMetricsForMonth(
+  mes: string,
+  anio: number,
+  excludedCampaignIds: string[] = [],
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -508,6 +516,14 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
   const lastDay = new Date(anio, mesNum, 0).getDate();
   const dateTo = new Date(`${anio}-${String(mesNum).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}T23:59:59`);
 
+  const whereConditions = [
+    gte(adMetricsDaily.fecha, dateFrom),
+    lte(adMetricsDaily.fecha, dateTo),
+  ];
+  if (excludedCampaignIds.length > 0) {
+    whereConditions.push(notInArray(adMetricsDaily.campaignId, excludedCampaignIds));
+  }
+
   const result = await db.select({
     totalSpend: sql<number>`COALESCE(SUM(CAST(${adMetricsDaily.spend} AS DECIMAL(10,2))), 0)`,
     totalLeads: sql<number>`COALESCE(SUM(${adMetricsDaily.leads}), 0)`,
@@ -516,7 +532,7 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
     totalReach: sql<number>`COALESCE(SUM(${adMetricsDaily.reach}), 0)`,
     totalLinkClicks: sql<number>`COALESCE(SUM(${adMetricsDaily.linkClicks}), 0)`,
   }).from(adMetricsDaily)
-    .where(and(gte(adMetricsDaily.fecha, dateFrom), lte(adMetricsDaily.fecha, dateTo)));
+    .where(and(...whereConditions));
 
   const row = result[0];
   const totalClicks = Number(row.totalClicks);
@@ -539,8 +555,15 @@ export async function aggregateAdMetricsForMonth(mes: string, anio: number) {
 /**
  * Get real ad metrics for a specific week (days 1-7, 8-14, etc.) from ad_metrics_daily.
  * Replaces the old prorating logic that assumed uniform spend distribution.
+ *
+ * `excludedCampaignIds` — mismo semántica que en aggregateAdMetricsForMonth.
  */
-export async function getWeeklyAdMetrics(mes: string, semana: number, anio: number) {
+export async function getWeeklyAdMetrics(
+  mes: string,
+  semana: number,
+  anio: number,
+  excludedCampaignIds: string[] = [],
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -554,13 +577,21 @@ export async function getWeeklyAdMetrics(mes: string, semana: number, anio: numb
   const dateFrom = new Date(`${anio}-${String(mesNum).padStart(2, "0")}-${String(dayStart).padStart(2, "0")}T00:00:00`);
   const dateTo = new Date(`${anio}-${String(mesNum).padStart(2, "0")}-${String(dayEnd).padStart(2, "0")}T23:59:59`);
 
+  const whereConditions = [
+    gte(adMetricsDaily.fecha, dateFrom),
+    lte(adMetricsDaily.fecha, dateTo),
+  ];
+  if (excludedCampaignIds.length > 0) {
+    whereConditions.push(notInArray(adMetricsDaily.campaignId, excludedCampaignIds));
+  }
+
   const result = await db.select({
     totalSpend: sql<number>`COALESCE(SUM(CAST(${adMetricsDaily.spend} AS DECIMAL(10,2))), 0)`,
     totalLeads: sql<number>`COALESCE(SUM(${adMetricsDaily.leads}), 0)`,
     totalClicks: sql<number>`COALESCE(SUM(${adMetricsDaily.clicks}), 0)`,
     totalImpressions: sql<number>`COALESCE(SUM(${adMetricsDaily.impressions}), 0)`,
   }).from(adMetricsDaily)
-    .where(and(gte(adMetricsDaily.fecha, dateFrom), lte(adMetricsDaily.fecha, dateTo)));
+    .where(and(...whereConditions));
 
   return result[0];
 }
@@ -568,8 +599,12 @@ export async function getWeeklyAdMetrics(mes: string, semana: number, anio: numb
 /**
  * Get marketing KPIs calculated from leads data + ad_metrics_daily (real Meta data) for a given period.
  * Falls back to monthly_metrics for historical months without daily ad data.
+ *
+ * `excludedCampaignIds` — IDs de campañas a excluir del agregado de ads (spend + leads + ctr).
+ * Útil para quitar campañas de tráfico / awareness / lead-gen paralelo y dejar solo el call funnel.
+ * Nota: el fallback manual de monthly_metrics NO se filtra (es un total ya cerrado).
  */
-export async function getMarketingKPIs(filters?: { mes?: string; semana?: number }) {
+export async function getMarketingKPIs(filters?: { mes?: string; semana?: number; excludedCampaignIds?: string[] }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -608,9 +643,11 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
   let ctrUnico = 0;
   let visitasLandingPage = 0;
 
+  const excludedCampaignIds = filters?.excludedCampaignIds ?? [];
+
   if (filters?.semana) {
     // Weekly: query actual daily ad data for the specific week's date range
-    const weeklyData = await getWeeklyAdMetrics(targetMes, filters.semana, anio);
+    const weeklyData = await getWeeklyAdMetrics(targetMes, filters.semana, anio, excludedCampaignIds);
     if (weeklyData && Number(weeklyData.totalSpend) > 0) {
       const weeklyDivisor = await getAdSpendDivisor();
       adSpend = Number(weeklyData.totalSpend) / weeklyDivisor;
@@ -620,7 +657,7 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
     }
   } else {
     // Monthly: aggregate all daily data for the month
-    const monthlyData = await aggregateAdMetricsForMonth(targetMes, anio);
+    const monthlyData = await aggregateAdMetricsForMonth(targetMes, anio, excludedCampaignIds);
     if (monthlyData && monthlyData.adSpend > 0) {
       adSpend = monthlyData.adSpend;
       totalLeadsRaw = monthlyData.totalLeadsRaw;
@@ -628,8 +665,10 @@ export async function getMarketingKPIs(filters?: { mes?: string; semana?: number
     }
   }
 
-  // Fallback to manual monthly_metrics if no daily ad data exists (historical months pre-CronSync)
-  if (adSpend === 0) {
+  // Fallback to manual monthly_metrics if no daily ad data exists (historical months pre-CronSync).
+  // Saltamos el fallback si hay exclusiones activas — el monto manual es un total agregado
+  // no-filtrable por campaña, reusarlo daría un dato inconsistente con la intención del usuario.
+  if (adSpend === 0 && excludedCampaignIds.length === 0) {
     const metricsResult = await db.select().from(monthlyMetrics)
       .where(and(eq(monthlyMetrics.mes, targetMes), eq(monthlyMetrics.anio, anio)))
       .limit(1);

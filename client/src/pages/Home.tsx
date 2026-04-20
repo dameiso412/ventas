@@ -4,7 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DataValidationAlert } from "@/components/DataValidationAlert";
-import { useState, useMemo } from "react";
+import CampaignFilter from "@/components/CampaignFilter";
+import { useState, useMemo, useEffect } from "react";
 import { useChartTheme } from "@/hooks/useChartTheme";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -106,20 +107,50 @@ function CostKPICard({ title, value, benchmark, icon: Icon, color, tooltip }: {
   );
 }
 
+const EXCLUDED_CAMPAIGNS_LS_KEY = "dashboard.excludedCampaignIds";
+
+function loadExcludedCampaigns(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(EXCLUDED_CAMPAIGNS_LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch { return []; }
+}
+
 export default function Home() {
   // Default to current Chile period (mes + semana) so the dashboard opens
   // showing "esta semana de este mes" instead of the all-time view.
   const [mes, setMes] = useState<string>(() => getCurrentMes());
   const [semana, setSemana] = useState<string>(() => String(getCurrentSemana()));
 
+  // Campañas Meta excluidas del agregado de ads — persistido en localStorage por browser.
+  // Default = [] (todas incluidas). Al cambiar, React Query refetchea automáticamente marketingKPIs.
+  const [excludedCampaignIds, setExcludedCampaignIds] = useState<string[]>(() => loadExcludedCampaigns());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(EXCLUDED_CAMPAIGNS_LS_KEY, JSON.stringify(excludedCampaignIds));
+    } catch { /* quota exceeded — ignore */ }
+  }, [excludedCampaignIds]);
 
+  // `filters` para queries que no dependen del filtro de campañas (kpis, trackerKPIs).
+  // Se mantienen estables si solo cambia la selección de campañas → no refetchean.
   const filters = useMemo(() => ({
     mes: mes !== "all" ? mes : undefined,
     semana: semana !== "all" ? parseInt(semana) : undefined,
   }), [mes, semana]);
 
+  // `mktFilters` extiende con excludedCampaignIds — solo para marketingKPIs, que es el único
+  // query que agrega ad_metrics_daily (spend, leads raw, CTR).
+  const mktFilters = useMemo(() => ({
+    ...filters,
+    excludedCampaignIds: excludedCampaignIds.length > 0 ? excludedCampaignIds : undefined,
+  }), [filters, excludedCampaignIds]);
+
   const { data: kpis, isLoading, isError, error } = trpc.dashboard.kpis.useQuery(filters);
-  const { data: mktKpis } = trpc.dashboard.marketingKPIs.useQuery(filters);
+  const { data: mktKpis } = trpc.dashboard.marketingKPIs.useQuery(mktFilters);
   const { data: trackerKpis } = trpc.dashboard.trackerKPIs.useQuery(filters);
   const { data: filterValues } = trpc.filters.distinctValues.useQuery();
 
@@ -284,7 +315,11 @@ export default function Home() {
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">KPIs comerciales y rendimiento de marketing</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <CampaignFilter
+            excludedIds={excludedCampaignIds}
+            onChange={setExcludedCampaignIds}
+          />
           <Select value={mes} onValueChange={setMes}>
             <SelectTrigger className="w-[140px] bg-card/50">
               <SelectValue placeholder="Mes" />
@@ -330,11 +365,16 @@ export default function Home() {
       <Card className="bg-gradient-to-r from-purple-900/40 to-card/50 border-primary/30">
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Megaphone className="h-5 w-5 text-primary" />
               <h2 className="text-sm font-semibold uppercase tracking-wider">
                 Inversión Publicitaria MTD — {mes !== "all" ? mes : MESES[new Date().getMonth()]} {new Date().getFullYear()}
               </h2>
+              {excludedCampaignIds.length > 0 && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
+                  Filtrado: {excludedCampaignIds.length} campaña{excludedCampaignIds.length === 1 ? "" : "s"} oculta{excludedCampaignIds.length === 1 ? "" : "s"}
+                </span>
+              )}
             </div>
             {!isEditingAd ? (
               <Button variant="outline" size="sm" onClick={() => {

@@ -622,6 +622,9 @@ export const appRouter = router({
       .input(z.object({
         mes: z.string().optional(),
         semana: z.number().optional(),
+        // IDs de campañas Meta a excluir del agregado de ads (spend, leads, ctr).
+        // Se propagan a aggregateAdMetricsForMonth / getWeeklyAdMetrics via NOT IN.
+        excludedCampaignIds: z.array(z.string()).optional(),
       }).optional())
       .query(({ input }) => db.getMarketingKPIs(input ?? undefined)),
 
