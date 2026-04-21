@@ -161,6 +161,88 @@ function CreativeMedia({ creative }: { creative: Creative }) {
   );
 }
 
+/**
+ * When the creative lookup returns null we ask the server what this ID
+ * actually is — an ad without cached media, an adset, a campaign, or
+ * something we've never seen. The message is tailored so operators know
+ * what to fix (sync creatives vs. fix UTM macros on the ad).
+ */
+function CreativeFallback({ adId }: { adId: string }) {
+  const { data, isLoading } = trpc.metaAds.attributionInfoById.useQuery(
+    { id: adId },
+    { staleTime: 10 * 60_000 },
+  );
+
+  if (isLoading) {
+    return (
+      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        Buscando información del anuncio…
+      </div>
+    );
+  }
+
+  const kind = data?.kind ?? "unknown";
+
+  if (kind === "ad_without_creative") {
+    return (
+      <div className="space-y-2 rounded-md border border-dashed p-6 text-sm">
+        <p className="font-medium text-foreground">
+          {data?.adName || "Anuncio"} <Badge variant="outline" className="ml-1">{data?.adStatus}</Badge>
+        </p>
+        <p className="text-muted-foreground">
+          La estructura se sincronizó pero la metadata visual (video, thumbnail, copy) no llegó.
+          Volvé a ejecutar <span className="font-mono">metaAds.syncStructure</span> — si el error persiste,
+          el token de Meta probablemente no tiene permisos <span className="font-mono">ads_read</span>
+          suficientes para leer <span className="font-mono">creative&#123;...&#125;</span>.
+        </p>
+        <p className="text-xs text-muted-foreground">Ad ID: {adId}</p>
+      </div>
+    );
+  }
+
+  if (kind === "campaign") {
+    return (
+      <div className="space-y-2 rounded-md border border-dashed p-6 text-sm">
+        <p className="font-medium text-foreground">
+          <Badge variant="secondary">Campaña</Badge> {data?.campaignName || adId}
+        </p>
+        <p className="text-muted-foreground">
+          Este ID corresponde a una <b>campaña</b>, no a un anuncio. Revisá la URL del anuncio en Meta —
+          el parámetro <span className="font-mono">utm_content</span> debería usar la macro{" "}
+          <span className="font-mono">{"{{ad.id}}"}</span>, no <span className="font-mono">{"{{campaign.id}}"}</span>.
+        </p>
+        <p className="text-xs text-muted-foreground">Campaign ID: {adId}</p>
+      </div>
+    );
+  }
+
+  if (kind === "adset") {
+    return (
+      <div className="space-y-2 rounded-md border border-dashed p-6 text-sm">
+        <p className="font-medium text-foreground">
+          <Badge variant="secondary">Conjunto</Badge> {data?.adsetName || adId}
+        </p>
+        <p className="text-muted-foreground">
+          Este ID corresponde a un <b>conjunto de anuncios</b>, no a un anuncio. Revisá la URL del anuncio
+          — <span className="font-mono">utm_content</span> debería usar{" "}
+          <span className="font-mono">{"{{ad.id}}"}</span>, no <span className="font-mono">{"{{adset.id}}"}</span>.
+        </p>
+        <p className="text-xs text-muted-foreground">Adset ID: {adId}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <p>
+        No hay creativo cacheado y este ID no matchea con ningún anuncio, conjunto ni campaña en cache.
+        Ejecutá <span className="font-mono">metaAds.syncStructure</span> desde Marketing → Atribución.
+      </p>
+      <p className="text-xs">ID: {adId}</p>
+    </div>
+  );
+}
+
 /** The full modal that plays the video and shows title/body/CTA. */
 function CreativeModal({
   adId,
@@ -254,11 +336,7 @@ function CreativeModal({
             <p className="text-xs text-muted-foreground">Ad ID: {adId}</p>
           </div>
         ) : (
-          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Sin creativo cacheado para este anuncio. Ejecutá{" "}
-            <span className="font-mono">metaAds.syncStructure</span> desde la
-            sección Marketing → Atribución para traer la metadata.
-          </div>
+          <CreativeFallback adId={adId} />
         )}
       </DialogContent>
     </Dialog>

@@ -1312,8 +1312,12 @@ export const appRouter = router({
 
       // Fetch creatives (thumbnail/video/copy) for every ad so attribution UIs
       // can render the actual anuncio instead of just the adId. We don't fail
-      // the whole sync if this step errors — structure data is still valuable.
+      // the whole sync if this step errors — structure data is still valuable —
+      // but we DO surface the error in the response so the frontend can toast
+      // it. Previous behavior was to log and swallow, which meant users thought
+      // the sync succeeded when creatives were actually empty.
       let creativesSynced = 0;
+      let creativesError: string | null = null;
       try {
         const adIds = ads.map((a) => a.id).filter(Boolean);
         const creatives = await metaAds.fetchAdCreatives(adIds);
@@ -1322,10 +1326,17 @@ export const appRouter = router({
           creativesSynced += 1;
         }
       } catch (err: any) {
-        console.error("[metaAds.syncStructure] fetchAdCreatives failed:", err?.message);
+        creativesError = err?.message ?? "fetchAdCreatives failed";
+        console.error("[metaAds.syncStructure] fetchAdCreatives failed:", creativesError);
       }
 
-      return { campaigns: campaigns.length, adsets: adsets.length, ads: ads.length, creatives: creativesSynced };
+      return {
+        campaigns: campaigns.length,
+        adsets: adsets.length,
+        ads: ads.length,
+        creatives: creativesSynced,
+        creativesError,
+      };
     }),
 
     /** Sync daily insights from Meta Ads API */
@@ -1426,6 +1437,17 @@ export const appRouter = router({
     creativeByAdId: publicProcedure
       .input(z.object({ adId: z.string() }))
       .query(({ input }) => db.getAdCreative(input.adId)),
+
+    /**
+     * Diagnostic lookup for a Meta numeric ID. Returns whatever we know about
+     * the ID: cached creative, ad-without-creative, or the campaign/adset it
+     * actually belongs to. Powers the "Sin creativo cacheado" fallback in
+     * AdCreativePreview so we can show a useful message instead of a dead end
+     * when UTM macros accidentally resolved to a campaign/adset ID.
+     */
+    attributionInfoById: publicProcedure
+      .input(z.object({ id: z.string() }))
+      .query(({ input }) => db.getAdAttributionInfo(input.id)),
 
     /** Batch lookup: returns { [adId]: creative } for all adIds that have a cached creative. */
     creativesByAdIds: publicProcedure

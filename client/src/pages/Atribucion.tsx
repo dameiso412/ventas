@@ -146,7 +146,23 @@ export default function Atribucion() {
 
   const syncStructure = trpc.metaAds.syncStructure.useMutation({
     onSuccess: (data) => {
-      toast.success(`Estructura sincronizada: ${data.campaigns} campañas, ${data.adsets} adsets, ${data.ads} anuncios`);
+      toast.success(
+        `Estructura sincronizada: ${data.campaigns} campañas, ${data.adsets} adsets, ${data.ads} anuncios, ${data.creatives} creativos`
+      );
+      // fetchAdCreatives corre en un try/catch interno — si falla, la estructura
+      // se guarda igual pero la metadata visual queda vacía. Mostramos el error
+      // explícito para que el operador sepa que debe arreglar permisos del token.
+      if (data.creativesError) {
+        toast.error(
+          `Creativos no sincronizados: ${data.creativesError}. La metadata visual (video/thumbnail) no está disponible hasta arreglar el token.`,
+          { duration: 10000 }
+        );
+      } else if (data.creatives === 0 && data.ads > 0) {
+        toast.warning(
+          `Se sincronizaron ${data.ads} anuncios pero 0 creativos. Revisá que el token tenga permisos ads_read sobre el objeto creative{...}.`,
+          { duration: 10000 }
+        );
+      }
       setIsSyncingStructure(false);
       utils.metaAds.utmStatus.invalidate();
     },

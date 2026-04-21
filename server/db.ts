@@ -2358,6 +2358,85 @@ export async function getAdCreative(adId: string): Promise<AdCreative | null> {
 }
 
 /**
+ * Best-effort diagnostic lookup for a Meta numeric ID.
+ *
+ * The `AdCreativePreview` component is fed an adId decoded from UTM macros. When
+ * the sync pipeline or the advertiser's macro setup fails, that ID might be:
+ *  - an ad with no cached creative (structure synced, media pass failed),
+ *  - an adset ID (UTM was `{{adset.id}}` in `utm_content`),
+ *  - a campaign ID (UTM was `{{campaign.id}}` in `utm_content`),
+ *  - or an unknown value (ad archived, different account, etc).
+ *
+ * Returns enough context for the UI to show a useful message instead of just
+ * "Sin creativo cacheado". Order matters: we check specific → general so an ad
+ * with a creative wins even if it happens to share a prefix with a campaign.
+ */
+export async function getAdAttributionInfo(id: string): Promise<{
+  kind: "ad_with_creative" | "ad_without_creative" | "adset" | "campaign" | "unknown";
+  adId?: string;
+  adName?: string | null;
+  adStatus?: string | null;
+  adsetId?: string | null;
+  campaignId?: string | null;
+  adsetName?: string | null;
+  campaignName?: string | null;
+  creative?: AdCreative | null;
+}> {
+  const db = await getDb();
+  if (!db) return { kind: "unknown" };
+
+  const creative = await getAdCreative(id);
+  if (creative) {
+    const adRows = await db.select().from(adAds).where(eq(adAds.adId, id)).limit(1);
+    const ad = adRows[0];
+    return {
+      kind: "ad_with_creative",
+      adId: id,
+      adName: ad?.name ?? null,
+      adStatus: ad?.status ?? null,
+      adsetId: ad?.adsetId ?? null,
+      campaignId: ad?.campaignId ?? null,
+      creative,
+    };
+  }
+
+  const adRows = await db.select().from(adAds).where(eq(adAds.adId, id)).limit(1);
+  if (adRows[0]) {
+    const ad = adRows[0];
+    return {
+      kind: "ad_without_creative",
+      adId: id,
+      adName: ad.name ?? null,
+      adStatus: ad.status ?? null,
+      adsetId: ad.adsetId ?? null,
+      campaignId: ad.campaignId ?? null,
+      creative: null,
+    };
+  }
+
+  const adsetRows = await db.select().from(adAdsets).where(eq(adAdsets.adsetId, id)).limit(1);
+  if (adsetRows[0]) {
+    return {
+      kind: "adset",
+      adsetId: id,
+      adsetName: adsetRows[0].name ?? null,
+      campaignId: adsetRows[0].campaignId ?? null,
+    };
+  }
+
+  const campaignRows = await db.select().from(adCampaigns).where(eq(adCampaigns.campaignId, id)).limit(1);
+  if (campaignRows[0]) {
+    return {
+      kind: "campaign",
+      campaignId: id,
+      campaignName: campaignRows[0].name ?? null,
+    };
+  }
+
+  return { kind: "unknown" };
+}
+
+/**
  * Batch lookup for creatives — returns a map keyed by adId so callers (UI
  * grids, attribution drill-downs) can build a lookup table in one roundtrip.
  */
