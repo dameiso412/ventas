@@ -2505,6 +2505,139 @@ export async function getAdMetricsByAd(adsetId: string, dateFrom?: string, dateT
 }
 
 /**
+ * Get creative-level performance for the "Performance por Creativo" dashboard.
+ *
+ * Joins 3 data sources on adId:
+ *  - ad_metrics_daily (spend / impressions / clicks) — from Meta cron-sync
+ *  - leads (leads / agendas / asistieron / ventas / revenue) — our CRM, via leads.metaAdId
+ *  - ad_creatives (thumbnail / video / title) — for inline preview without opening Ads Manager
+ *  - ad_ads (ad name / campaign id/name) — metadata fallback when a lead exists but metrics weren't synced yet
+ *
+ * FULL OUTER JOIN on the two aggregates so we show rows where either: (a) we
+ * spent money but no lead yet arrived, or (b) a lead came in but the daily
+ * metric hasn't synced yet. Filtering HAVING (spend>0 OR leads>0) strips away
+ * zombie rows from ad_ads that are inactive in the window.
+ *
+ * Spend is divided by `getAdSpendDivisor()` (same MXN→USD conversion the rest
+ * of the dashboard uses), so cpl/cpa/cpv/roas are in the same currency as
+ * lead revenue. Date filtering is inclusive on both ends.
+ */
+export async function getCreativePerformance(filters: { dateFrom: string; dateTo: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const divisor = await getAdSpendDivisor();
+
+  const from = new Date(filters.dateFrom);
+  const to = new Date(filters.dateTo);
+
+  const rows = await db.execute(sql`
+    WITH spend_agg AS (
+      SELECT
+        "adId",
+        MAX("adName") AS ad_name,
+        MAX("campaignId") AS campaign_id,
+        MAX("campaignName") AS campaign_name,
+        SUM(CAST(spend AS DECIMAL(10,2))) AS total_spend,
+        SUM(impressions) AS impressions,
+        SUM(clicks) AS clicks,
+        SUM("linkClicks") AS link_clicks,
+        SUM(leads) AS meta_reported_leads
+      FROM ad_metrics_daily
+      WHERE fecha >= ${from} AND fecha <= ${to}
+        AND "adId" IS NOT NULL
+      GROUP BY "adId"
+    ),
+    leads_agg AS (
+      SELECT
+        "metaAdId" AS ad_id,
+        COUNT(*) AS leads_count,
+        SUM(CASE WHEN categoria = 'AGENDA' THEN 1 ELSE 0 END) AS agendas,
+        SUM(CASE WHEN asistencia = 'ASISTIÓ' THEN 1 ELSE 0 END) AS asistieron,
+        SUM(CASE WHEN outcome = 'VENTA' THEN 1 ELSE 0 END) AS ventas,
+        SUM(CASE WHEN outcome = 'VENTA' THEN COALESCE(CAST("cashCollected" AS DECIMAL(10,2)), 0) ELSE 0 END) AS revenue
+      FROM leads
+      WHERE "metaAdId" IS NOT NULL
+        AND "createdAt" >= ${from} AND "createdAt" <= ${to}
+      GROUP BY "metaAdId"
+    )
+    SELECT
+      COALESCE(sa."adId", la.ad_id) AS "adId",
+      COALESCE(sa.ad_name, aa.name) AS "adName",
+      COALESCE(sa.campaign_id, aa."campaignId") AS "campaignId",
+      sa.campaign_name AS "campaignName",
+      ac."thumbnailUrl" AS "thumbnailUrl",
+      ac."videoId" AS "videoId",
+      ac."videoSourceUrl" AS "videoSourceUrl",
+      ac."videoPermalinkUrl" AS "videoPermalinkUrl",
+      ac."imageUrl" AS "imageUrl",
+      ac.title AS "creativeTitle",
+      ac.body AS "creativeBody",
+      COALESCE(sa.total_spend, 0) AS spend,
+      COALESCE(sa.impressions, 0) AS impressions,
+      COALESCE(sa.clicks, 0) AS clicks,
+      COALESCE(sa.link_clicks, 0) AS "linkClicks",
+      COALESCE(sa.meta_reported_leads, 0) AS "metaReportedLeads",
+      COALESCE(la.leads_count, 0) AS leads,
+      COALESCE(la.agendas, 0) AS agendas,
+      COALESCE(la.asistieron, 0) AS asistieron,
+      COALESCE(la.ventas, 0) AS ventas,
+      COALESCE(la.revenue, 0) AS revenue
+    FROM spend_agg sa
+    FULL OUTER JOIN leads_agg la ON la.ad_id = sa."adId"
+    LEFT JOIN ad_ads aa ON aa."adId" = COALESCE(sa."adId", la.ad_id)
+    LEFT JOIN ad_creatives ac ON ac."adId" = COALESCE(sa."adId", la.ad_id)
+    WHERE COALESCE(sa.total_spend, 0) > 0 OR COALESCE(la.leads_count, 0) > 0
+    ORDER BY COALESCE(sa.total_spend, 0) DESC
+  `);
+
+  // drizzle-postgres-js returns rows as an array-like; normalize + compute derived metrics
+  const list = Array.isArray(rows) ? rows : ((rows as any)?.rows ?? []);
+  return list.map((r: any) => {
+    const spendRaw = Number(r.spend) || 0;
+    const spend = spendRaw / divisor;
+    const impressions = Number(r.impressions) || 0;
+    const clicks = Number(r.clicks) || 0;
+    const linkClicks = Number(r.linkClicks) || 0;
+    const leads = Number(r.leads) || 0;
+    const agendas = Number(r.agendas) || 0;
+    const asistieron = Number(r.asistieron) || 0;
+    const ventas = Number(r.ventas) || 0;
+    const revenue = Number(r.revenue) || 0;
+    return {
+      adId: r.adId as string,
+      adName: (r.adName as string | null) || null,
+      campaignId: (r.campaignId as string | null) || null,
+      campaignName: (r.campaignName as string | null) || null,
+      // Creative media (can all be null for non-synced or image-only ads)
+      thumbnailUrl: (r.thumbnailUrl as string | null) || null,
+      videoId: (r.videoId as string | null) || null,
+      videoSourceUrl: (r.videoSourceUrl as string | null) || null,
+      videoPermalinkUrl: (r.videoPermalinkUrl as string | null) || null,
+      imageUrl: (r.imageUrl as string | null) || null,
+      creativeTitle: (r.creativeTitle as string | null) || null,
+      creativeBody: (r.creativeBody as string | null) || null,
+      // Raw volumes
+      spend,
+      impressions,
+      clicks,
+      linkClicks,
+      metaReportedLeads: Number(r.metaReportedLeads) || 0,
+      leads,
+      agendas,
+      asistieron,
+      ventas,
+      revenue,
+      // Derived cost-per-stage (null when denom=0 so UI can render "—")
+      cpl: leads > 0 ? spend / leads : null,
+      cpa: agendas > 0 ? spend / agendas : null,
+      cpv: ventas > 0 ? spend / ventas : null,
+      roas: spend > 0 ? revenue / spend : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : null,
+    };
+  });
+}
+
+/**
  * Get attribution data: leads grouped by UTM campaign with their outcomes.
  * This is the core of the traceability feature.
  */

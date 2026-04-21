@@ -8,6 +8,7 @@ import Scoring from "../Scoring";
 import Diagnostico from "../Diagnostico";
 import AuditoriaLlamadas from "../AuditoriaLlamadas";
 import MarketingAuditoriaUtm from "./MarketingAuditoriaUtm";
+import MarketingCreativos from "./MarketingCreativos";
 
 const SECTION = NAV_SECTIONS.find((s) => s.basePath === "/marketing")!;
 
@@ -21,6 +22,9 @@ export default function MarketingSection() {
       <Switch>
         <Route path="/marketing/atribucion">
           <ProtectedRoute component={Atribucion} path="/marketing/atribucion" />
+        </Route>
+        <Route path="/marketing/creativos">
+          <ProtectedRoute component={MarketingCreativos} path="/marketing/creativos" />
         </Route>
         <Route path="/marketing/auditoria-utm">
           <ProtectedRoute component={MarketingAuditoriaUtm} path="/marketing/auditoria-utm" />

@@ -133,6 +133,14 @@ export const leads = pgTable("leads", {
   landingUrl: text("landingUrl"),
   /** Referrer header at time of webhook capture — populated when webhook carries it. */
   attributionReferrer: varchar("attributionReferrer", { length: 500 }),
+  // Creative-level attribution (resolved at webhook ingestion from UTM values).
+  // When Meta's UTM macros (`{{ad.id}}`, `{{adset.id}}`, `{{campaign.id}}`) are
+  // configured on the ad, they land here verbatim — giving us a 1-to-1 join to
+  // ad_ads / ad_adsets / ad_campaigns without doing fuzzy name matching. Nullable
+  // because older leads and non-Meta sources won't have them.
+  metaAdId: varchar("metaAdId", { length: 50 }),
+  metaAdsetId: varchar("metaAdsetId", { length: 50 }),
+  metaCampaignId: varchar("metaCampaignId", { length: 50 }),
   // Scoring
   score: integer("score"),
   scoreLabel: scoreLabelEnum("scoreLabel"),
@@ -149,6 +157,9 @@ export const leads = pgTable("leads", {
   categoriaIdx: index("idx_leads_categoria").on(table.categoria),
   createdAtIdx: index("idx_leads_created_at").on(table.createdAt),
   fechaIdx: index("idx_leads_fecha").on(table.fecha),
+  metaAdIdx: index("idx_leads_meta_ad_id").on(table.metaAdId),
+  metaAdsetIdx: index("idx_leads_meta_adset_id").on(table.metaAdsetId),
+  metaCampaignIdx: index("idx_leads_meta_campaign_id").on(table.metaCampaignId),
 }));
 
 export type Lead = typeof leads.$inferSelect;

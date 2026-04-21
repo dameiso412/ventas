@@ -65,6 +65,39 @@ function getSemanaDelMes(date: Date): number {
 }
 
 // ============================================================
+// META UTM → AD-ID RESOLVER
+//
+// When an ad in Meta Ads Manager is tagged with the URL-parameter macros
+// `{{campaign.id}}`, `{{adset.id}}`, `{{ad.id}}` (standard Meta pattern),
+// those resolve to pure-numeric IDs in the landing URL and get captured as
+// utm_campaign / utm_term / utm_content respectively. Converting them into
+// first-class columns lets us JOIN ad_ads / ad_creatives directly on
+// leads.meta_ad_id, which is the backbone of the creative-level dashboard.
+//
+// Heuristic: Meta numeric IDs are 10-20 digits. Anything shorter (or that
+// contains non-digits) is a human-readable campaign name and we leave it
+// in utm_* for reporting but don't promote it to a meta_*_id column.
+//
+// Returns an object with whichever fields could be resolved, so callers can
+// spread it into a lead record: { ...resolveMetaIdsFromUtm(...) }.
+// ============================================================
+function resolveMetaIdsFromUtm(params: {
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  utmTerm?: string | null;
+}): { metaCampaignId?: string; metaAdId?: string; metaAdsetId?: string } {
+  const out: { metaCampaignId?: string; metaAdId?: string; metaAdsetId?: string } = {};
+  const isMetaId = (v: unknown): v is string => typeof v === "string" && /^\d{10,20}$/.test(v.trim());
+  // {{campaign.id}} → utm_campaign
+  if (isMetaId(params.utmCampaign)) out.metaCampaignId = params.utmCampaign!.trim();
+  // {{ad.id}} → utm_content
+  if (isMetaId(params.utmContent)) out.metaAdId = params.utmContent!.trim();
+  // {{adset.id}} → utm_term
+  if (isMetaId(params.utmTerm)) out.metaAdsetId = params.utmTerm!.trim();
+  return out;
+}
+
+// ============================================================
 // SMART KEY MATCHER
 // GHL sends form questions as full-text keys in Spanish.
 // This function searches all keys in the payload for one that
@@ -199,9 +232,17 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
     const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
     const attributionReferrer = body.referrer || body.referer || (req.headers.referer as string) || null;
 
+    // Promote numeric UTM values to first-class Meta IDs when the ad used
+    // Meta's URL macros ({{campaign.id}}, {{ad.id}}, {{adset.id}}). Human-
+    // readable campaign names stay only in utm_* — we never guess.
+    const metaIds = resolveMetaIdsFromUtm({ utmCampaign, utmContent, utmTerm });
+
     console.log("[Webhook:Lead] Mapped -> nombre:", nombre, "| correo:", correo, "| telefono:", telefono, "| linkCRM:", linkCRM, "| facturacion:", facturacion);
     console.log("[Webhook:Lead] UTM -> source:", utmSource, "| medium:", utmMedium, "| campaign:", utmCampaign, "| content:", utmContent, "| term:", utmTerm);
     console.log("[Webhook:Lead] Click IDs -> fbclid:", fbclid ? "present" : "absent", "| gclid:", gclid ? "present" : "absent");
+    if (metaIds.metaAdId || metaIds.metaCampaignId || metaIds.metaAdsetId) {
+      console.log("[Webhook:Lead] Meta IDs resolved -> ad:", metaIds.metaAdId ?? "—", "| adset:", metaIds.metaAdsetId ?? "—", "| campaign:", metaIds.metaCampaignId ?? "—");
+    }
 
     // Create initial webhook log entry
     try {
@@ -268,6 +309,11 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
       if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
       if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
+      // Meta IDs: backfill only if empty — a reschedule shouldn't overwrite an
+      // attribution we already resolved from the original lead creation.
+      if (metaIds.metaAdId && !(existingLead as any).metaAdId) updateData.metaAdId = metaIds.metaAdId;
+      if (metaIds.metaAdsetId && !(existingLead as any).metaAdsetId) updateData.metaAdsetId = metaIds.metaAdsetId;
+      if (metaIds.metaCampaignId && !(existingLead as any).metaCampaignId) updateData.metaCampaignId = metaIds.metaCampaignId;
 
       // Handle intro→demo conversion
       let action = "updated";
@@ -342,6 +388,8 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       ...(gclid ? { gclid } : {}),
       ...(landingUrl ? { landingUrl } : {}),
       ...(attributionReferrer ? { attributionReferrer } : {}),
+      // Meta-resolved IDs (only if UTMs used Meta's macro format).
+      ...metaIds,
     };
     // If it's an intro, also save the intro date
     if (tipoCita === "INTRO") {
@@ -898,7 +946,13 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
     const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
     const attributionReferrer = body.referrer || body.http_referrer || body.httpReferrer || null;
 
+    // Promote numeric UTM values to Meta IDs (see lead webhook for rationale).
+    const metaIds = resolveMetaIdsFromUtm({ utmCampaign, utmContent, utmTerm });
+
     console.log(`[Webhook:Prospect] Mapped -> nombre: ${nombre} | correo: ${correo} | telefono: ${telefono}`);
+    if (metaIds.metaAdId || metaIds.metaCampaignId || metaIds.metaAdsetId) {
+      console.log(`[Webhook:Prospect] Meta IDs resolved -> ad: ${metaIds.metaAdId ?? "—"} | adset: ${metaIds.metaAdsetId ?? "—"} | campaign: ${metaIds.metaCampaignId ?? "—"}`);
+    }
 
     // Create webhook log
     try {
@@ -935,6 +989,10 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
       if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
       if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
+      // Meta-resolved IDs: backfill only if empty.
+      if (metaIds.metaAdId && !(existingLead as any).metaAdId) updateData.metaAdId = metaIds.metaAdId;
+      if (metaIds.metaAdsetId && !(existingLead as any).metaAdsetId) updateData.metaAdsetId = metaIds.metaAdsetId;
+      if (metaIds.metaCampaignId && !(existingLead as any).metaCampaignId) updateData.metaCampaignId = metaIds.metaCampaignId;
 
       if (Object.keys(updateData).length > 0) {
         await db.updateLead(existingLead.id, updateData);
@@ -989,6 +1047,7 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       ...(gclid ? { gclid } : {}),
       ...(landingUrl ? { landingUrl } : {}),
       ...(attributionReferrer ? { attributionReferrer } : {}),
+      ...metaIds,
     };
 
     const leadId = await db.createLead(leadData);
@@ -1410,10 +1469,23 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
     const mcFbclid = customFields.fbclid || customFields.fbc || null;
     const mcLandingUrl = customFields.landing_url || customFields.landingUrl || null;
 
+    // Promote numeric IDs. ManyChat has an extra advantage here: `last_ad_id` /
+    // `ad_id` / `adset_id` custom fields are ALREADY pure IDs when present, so
+    // resolveMetaIdsFromUtm catches them regardless of whether they arrived via
+    // utm_content or direct custom-field.
+    const mcMetaIds = resolveMetaIdsFromUtm({
+      utmCampaign: mcUtmCampaign,
+      utmContent: mcUtmContent,
+      utmTerm: mcUtmTerm,
+    });
+
     if (mcUtmSource || mcUtmContent || igRef) {
       console.log(`[Webhook:ManyChat] Attribution captured: source=${mcUtmSource} content=${mcUtmContent} ref=${igRef ? "yes" : "no"}`);
     } else {
       console.log(`[Webhook:ManyChat] No attribution in payload or custom_fields`);
+    }
+    if (mcMetaIds.metaAdId || mcMetaIds.metaCampaignId || mcMetaIds.metaAdsetId) {
+      console.log(`[Webhook:ManyChat] Meta IDs resolved -> ad: ${mcMetaIds.metaAdId ?? "—"} | adset: ${mcMetaIds.metaAdsetId ?? "—"} | campaign: ${mcMetaIds.metaCampaignId ?? "—"}`);
     }
 
     // Try to find existing lead by instagram handle
@@ -1448,6 +1520,10 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
       if (mcUtmTerm && !lead.utmTerm) updateData.utmTerm = mcUtmTerm;
       if (mcFbclid && !(lead as any).fbclid) updateData.fbclid = mcFbclid;
       if (mcLandingUrl && !(lead as any).landingUrl) updateData.landingUrl = mcLandingUrl;
+      // Meta-resolved IDs: backfill only if empty.
+      if (mcMetaIds.metaAdId && !(lead as any).metaAdId) updateData.metaAdId = mcMetaIds.metaAdId;
+      if (mcMetaIds.metaAdsetId && !(lead as any).metaAdsetId) updateData.metaAdsetId = mcMetaIds.metaAdsetId;
+      if (mcMetaIds.metaCampaignId && !(lead as any).metaCampaignId) updateData.metaCampaignId = mcMetaIds.metaCampaignId;
 
       await db.updateLead(lead.id, updateData);
       console.log(`[Webhook:ManyChat] Updated existing lead #${lead.id} with manychatSubscriberId=${subscriberId}`);
@@ -1472,6 +1548,7 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
         ...(mcUtmTerm ? { utmTerm: mcUtmTerm } : {}),
         ...(mcFbclid ? { fbclid: mcFbclid } : {}),
         ...(mcLandingUrl ? { landingUrl: mcLandingUrl } : {}),
+        ...mcMetaIds,
       } as any);
 
       lead = { id: newLeadId };

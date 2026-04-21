@@ -1402,6 +1402,15 @@ export const appRouter = router({
       .input(z.object({ adsetId: z.string(), dateFrom: z.string().optional(), dateTo: z.string().optional() }))
       .query(({ input }) => db.getAdMetricsByAd(input.adsetId, input.dateFrom, input.dateTo)),
 
+    /**
+     * Creative-level performance: joins ad_metrics_daily + leads (via metaAdId)
+     * + ad_creatives. Drives the "Performance por Creativo" dashboard.
+     * Date range is required — without it the row count could be very large.
+     */
+    creativePerformance: publicProcedure
+      .input(z.object({ dateFrom: z.string(), dateTo: z.string() }))
+      .query(({ input }) => db.getCreativePerformance(input)),
+
     /** Get daily spend trend for charts */
     spendTrend: publicProcedure
       .input(z.object({ dateFrom: z.string(), dateTo: z.string() }))

@@ -39,6 +39,7 @@ import {
   TableProperties,
   Gauge,
   ClipboardList,
+  Clapperboard,
   type LucideIcon,
 } from "lucide-react";
 import type { CrmRole } from "@shared/permissions";
@@ -124,6 +125,7 @@ export const NAV_SECTIONS: NavSection[] = [
     defaultPath: "/marketing/scoring",
     subTabs: [
       { label: "Atribución", path: "/marketing/atribucion", icon: Crosshair, roles: ADMIN_ONLY },
+      { label: "Creativos", path: "/marketing/creativos", icon: Clapperboard, roles: ADMIN_ONLY },
       { label: "Auditoría UTM", path: "/marketing/auditoria-utm", icon: FileSearch, roles: ADMIN_ONLY },
       { label: "Scoring IA", path: "/marketing/scoring", icon: Star, roles: ALL_ROLES },
       { label: "Diagnóstico", path: "/marketing/diagnostico", icon: Activity, roles: ADMIN_ONLY },
