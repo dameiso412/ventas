@@ -394,12 +394,42 @@ const CREATIVE_FIELDS = [
  * Does a second pass to expand video source URLs (Graph returns only
  * `video_id`; we need the mp4 to render `<video src>`).
  */
+export interface FetchCreativesResult {
+  creatives: ParsedCreative[];
+  stats: {
+    adsSeen: number;
+    adsWithCreative: number;
+    creativesParsed: number;
+    videosExpanded: number;
+    firstAdSample: unknown;
+    lastError: string | null;
+  };
+}
+
 export async function fetchAdCreatives(adIds?: string[]): Promise<ParsedCreative[]> {
+  const res = await fetchAdCreativesWithStats(adIds);
+  return res.creatives;
+}
+
+/**
+ * Same as fetchAdCreatives but also returns diagnostic stats. The sync
+ * endpoint uses these so operators see exactly where the pipeline dropped
+ * off (e.g., "236 ads seen, 0 with creative field" → token permission issue).
+ */
+export async function fetchAdCreativesWithStats(adIds?: string[]): Promise<FetchCreativesResult> {
   const accountId = ENV.metaAdAccountId;
   const adIdSet = adIds && adIds.length ? new Set(adIds.filter(Boolean)) : null;
 
   const creatives: ParsedCreative[] = [];
   const videoIds = new Set<string>();
+  const stats: FetchCreativesResult["stats"] = {
+    adsSeen: 0,
+    adsWithCreative: 0,
+    creativesParsed: 0,
+    videosExpanded: 0,
+    firstAdSample: null,
+    lastError: null,
+  };
 
   let after: string | undefined;
   // Hard cap: 20 pages × 100 ads = 2 000 ads — enough for any realistic account.
@@ -414,17 +444,22 @@ export async function fetchAdCreatives(adIds?: string[]): Promise<ParsedCreative
     try {
       resp = await metaFetchWithRetry(`/${accountId}/ads`, params);
     } catch (err: any) {
-      console.error(`[MetaAds:fetchAdCreatives] page ${page} failed:`, err?.message);
+      stats.lastError = err?.message ?? "unknown";
+      console.error(`[MetaAds:fetchAdCreatives] page ${page} failed:`, stats.lastError);
       break;
     }
 
     for (const ad of resp.data) {
+      stats.adsSeen += 1;
+      if (!stats.firstAdSample) stats.firstAdSample = ad;
       // Skip ads not in the requested set (when filtering by pre-fetched adIds).
       if (adIdSet && !adIdSet.has(ad.id)) continue;
       if (!ad.creative) continue;
 
+      stats.adsWithCreative += 1;
       const parsed = parseCreative(ad.id, ad.creative);
       creatives.push(parsed);
+      stats.creativesParsed += 1;
       if (parsed.videoId) videoIds.add(parsed.videoId);
     }
 
@@ -432,6 +467,33 @@ export async function fetchAdCreatives(adIds?: string[]): Promise<ParsedCreative
     const nextCursor = resp.paging?.cursors?.after;
     if (!nextCursor || !resp.paging?.next || resp.data.length === 0) break;
     after = nextCursor;
+  }
+
+  // Fallback: when the account-level batch returns nothing useful (e.g., token
+  // permission gap silently strips the `creative` object), iterate per ad.
+  // This is slower (one request per ad) but uses a different Graph path that
+  // some token scopes allow even when the batch expansion doesn't.
+  if (stats.adsWithCreative === 0 && adIdSet && adIdSet.size > 0) {
+    console.warn(
+      `[MetaAds:fetchAdCreatives] batch returned 0 creatives for ${adIdSet.size} ads — falling back to per-ad requests.`
+    );
+    for (const adId of Array.from(adIdSet)) {
+      try {
+        const single = await metaFetchWithRetry<MetaCreative>(`/${adId}/adcreatives`, {
+          fields: CREATIVE_FIELDS,
+          limit: "1",
+        });
+        const data = (single as any)?.data?.[0];
+        if (!data) continue;
+        stats.adsWithCreative += 1;
+        const parsed = parseCreative(adId, data);
+        creatives.push(parsed);
+        stats.creativesParsed += 1;
+        if (parsed.videoId) videoIds.add(parsed.videoId);
+      } catch (err: any) {
+        stats.lastError = err?.message ?? stats.lastError;
+      }
+    }
   }
 
   // Second pass: expand video metadata so we have a playable source URL.
@@ -445,11 +507,46 @@ export async function fetchAdCreatives(adIds?: string[]): Promise<ParsedCreative
         // Keep the existing thumbnail if Meta already returned one for the creative;
         // fall back to the video's `picture` frame otherwise.
         if (!c.thumbnailUrl && v.picture) c.thumbnailUrl = v.picture;
+        stats.videosExpanded += 1;
       }
     }
   }
 
-  return creatives;
+  return { creatives, stats };
+}
+
+/**
+ * Diagnostic endpoint — hits Meta with a tiny, isolated request so operators
+ * can inspect the raw response when syncs return empty. Returns the literal
+ * JSON from Graph so we can see:
+ *  - whether `creative` is being expanded (permission/scope issue),
+ *  - whether nested fields like `object_story_spec` are rejected,
+ *  - whether the account has no ads at all.
+ */
+export async function debugFetchCreatives(singleAdId?: string): Promise<{
+  accountEndpoint: unknown;
+  singleAdEndpoint: unknown;
+  singleAdCreativesEndpoint: unknown;
+}> {
+  const accountId = ENV.metaAdAccountId;
+  const accountEndpoint = await metaFetch<unknown>(`/${accountId}/ads`, {
+    fields: `id,name,status,creative{${CREATIVE_FIELDS}}`,
+    limit: "3",
+  }).catch((e: any) => ({ error: e?.message ?? String(e) }));
+
+  let singleAdEndpoint: unknown = null;
+  let singleAdCreativesEndpoint: unknown = null;
+  if (singleAdId) {
+    singleAdEndpoint = await metaFetch<unknown>(`/${singleAdId}`, {
+      fields: `id,name,status,creative{${CREATIVE_FIELDS}}`,
+    }).catch((e: any) => ({ error: e?.message ?? String(e) }));
+    singleAdCreativesEndpoint = await metaFetch<unknown>(`/${singleAdId}/adcreatives`, {
+      fields: CREATIVE_FIELDS,
+      limit: "5",
+    }).catch((e: any) => ({ error: e?.message ?? String(e) }));
+  }
+
+  return { accountEndpoint, singleAdEndpoint, singleAdCreativesEndpoint };
 }
 
 /**

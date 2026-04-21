@@ -84,6 +84,8 @@ export default function Atribucion() {
   const [expandedAdset, setExpandedAdset] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingStructure, setIsSyncingStructure] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugPayload, setDebugPayload] = useState<unknown>(null);
 
   const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   const years = [2025, 2026];
@@ -158,9 +160,13 @@ export default function Atribucion() {
           { duration: 10000 }
         );
       } else if (data.creatives === 0 && data.ads > 0) {
+        const s = data.creativesStats;
+        const detail = s
+          ? ` (${s.adsSeen} ads vistos, ${s.adsWithCreative} con creative expandido${s.lastError ? `, último error: ${s.lastError}` : ""})`
+          : "";
         toast.warning(
-          `Se sincronizaron ${data.ads} anuncios pero 0 creativos. Revisá que el token tenga permisos ads_read sobre el objeto creative{...}.`,
-          { duration: 10000 }
+          `Se sincronizaron ${data.ads} anuncios pero 0 creativos${detail}. Corré "Diagnóstico de creativos" para ver el payload crudo.`,
+          { duration: 15000 }
         );
       }
       setIsSyncingStructure(false);
@@ -169,6 +175,16 @@ export default function Atribucion() {
     onError: (err) => {
       toast.error(`Error sincronizando estructura: ${err.message}`);
       setIsSyncingStructure(false);
+    },
+  });
+
+  const debugCreatives = trpc.metaAds.debugCreatives.useMutation({
+    onSuccess: (data) => {
+      setDebugPayload(data);
+      setDebugOpen(true);
+    },
+    onError: (err) => {
+      toast.error(`Error en diagnóstico: ${err.message}`);
     },
   });
 
@@ -305,8 +321,67 @@ export default function Atribucion() {
             )}
             Sincronizar Meta
           </Button>
+          {/* Debug Button — shows raw Meta API response so we can diagnose
+              why ad_creatives stays empty after a "successful" sync. */}
+          <Button
+            onClick={() => debugCreatives.mutate({})}
+            disabled={debugCreatives.isPending || !tokenStatus.data?.valid}
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            title="Llama a Meta Graph con un sample y muestra el payload crudo"
+          >
+            {debugCreatives.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <AlertTriangle className="h-4 w-4" />
+            )}
+            Diagnóstico creativos
+          </Button>
         </div>
       </div>
+
+      {/* Debug Dialog — shows the raw Meta Graph response for investigation */}
+      {debugOpen && debugPayload ? (
+        <Card className="border-amber-500/50 bg-amber-50/5">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Diagnóstico de Meta Graph (respuesta cruda)
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setDebugOpen(false)}
+            >
+              Cerrar
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-2">
+              Si <code>accountEndpoint.data[].creative</code> es <code>undefined</code>,
+              el token no tiene permisos para expandir <code>creative&#123;...&#125;</code>.
+              Probá regenerar el System User Token con <code>ads_management</code> +{" "}
+              <code>business_management</code> además de <code>ads_read</code>.
+            </p>
+            <pre className="text-[10px] font-mono bg-card border border-border rounded p-3 max-h-96 overflow-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(debugPayload, null, 2)}
+            </pre>
+            <div className="flex gap-2 mt-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(JSON.stringify(debugPayload, null, 2));
+                  toast.success("Payload copiado");
+                }}
+              >
+                <Copy className="h-3 w-3 mr-1" /> Copiar JSON
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Connection Status */}
       <Card className="border-border/50">

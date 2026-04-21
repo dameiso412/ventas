@@ -1311,19 +1311,23 @@ export const appRouter = router({
       }
 
       // Fetch creatives (thumbnail/video/copy) for every ad so attribution UIs
-      // can render the actual anuncio instead of just the adId. We don't fail
-      // the whole sync if this step errors — structure data is still valuable —
-      // but we DO surface the error in the response so the frontend can toast
-      // it. Previous behavior was to log and swallow, which meant users thought
-      // the sync succeeded when creatives were actually empty.
+      // can render the actual anuncio instead of just the adId. The batch
+      // endpoint silently drops the `creative` expansion for many tokens —
+      // fetchAdCreativesWithStats falls back to per-ad requests and returns
+      // diagnostic counts so operators can see where the pipeline dropped off.
       let creativesSynced = 0;
       let creativesError: string | null = null;
+      let creativesStats: any = null;
       try {
         const adIds = ads.map((a) => a.id).filter(Boolean);
-        const creatives = await metaAds.fetchAdCreatives(adIds);
-        for (const c of creatives) {
+        const result = await metaAds.fetchAdCreativesWithStats(adIds);
+        creativesStats = result.stats;
+        for (const c of result.creatives) {
           await db.upsertAdCreative(c);
           creativesSynced += 1;
+        }
+        if (result.stats.lastError && creativesSynced === 0) {
+          creativesError = result.stats.lastError;
         }
       } catch (err: any) {
         creativesError = err?.message ?? "fetchAdCreatives failed";
@@ -1336,8 +1340,19 @@ export const appRouter = router({
         ads: ads.length,
         creatives: creativesSynced,
         creativesError,
+        creativesStats,
       };
     }),
+
+    /**
+     * Diagnostic: hits Meta with a tiny test request and returns the raw JSON.
+     * Use from the UI when sync completes but ad_creatives stays empty — the
+     * response reveals whether the `creative` field is being stripped (token
+     * scope issue) or whether it never existed on these ads in the first place.
+     */
+    debugCreatives: publicProcedure
+      .input(z.object({ adId: z.string().optional() }).optional())
+      .mutation(async ({ input }) => metaAds.debugFetchCreatives(input?.adId)),
 
     /** Sync daily insights from Meta Ads API */
     syncInsights: publicProcedure
