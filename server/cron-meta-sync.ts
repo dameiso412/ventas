@@ -30,15 +30,25 @@ export async function performFullSync(syncType: "meta_ads_auto" | "meta_ads_manu
   adsets: number;
   ads: number;
   insights: number;
+  creatives: number;
+  creativesError: string | null;
+  creativesStats: {
+    adsSeen: number;
+    adsWithCreative: number;
+    creativesParsed: number;
+    videosExpanded: number;
+    lastError: string | null;
+  } | null;
   durationMs: number;
   error?: string;
 }> {
+  const emptyCreatives = { creatives: 0, creativesError: null, creativesStats: null };
   if (isSyncing) {
-    return { success: false, logId: 0, campaigns: 0, adsets: 0, ads: 0, insights: 0, durationMs: 0, error: "Sync already in progress" };
+    return { success: false, logId: 0, campaigns: 0, adsets: 0, ads: 0, insights: 0, ...emptyCreatives, durationMs: 0, error: "Sync already in progress" };
   }
 
   if (!ENV.fbAccessToken || !ENV.metaAdAccountId) {
-    return { success: false, logId: 0, campaigns: 0, adsets: 0, ads: 0, insights: 0, durationMs: 0, error: "Missing FB_ACCESS_TOKEN or META_AD_ACCOUNT_ID" };
+    return { success: false, logId: 0, campaigns: 0, adsets: 0, ads: 0, insights: 0, ...emptyCreatives, durationMs: 0, error: "Missing FB_ACCESS_TOKEN or META_AD_ACCOUNT_ID" };
   }
 
   isSyncing = true;
@@ -61,6 +71,15 @@ export async function performFullSync(syncType: "meta_ads_auto" | "meta_ads_manu
   let adsetCount = 0;
   let adCount = 0;
   let insightCount = 0;
+  let creativesSynced = 0;
+  let creativesError: string | null = null;
+  let creativesStats: {
+    adsSeen: number;
+    adsWithCreative: number;
+    creativesParsed: number;
+    videosExpanded: number;
+    lastError: string | null;
+  } | null = null;
 
   try {
     // Step 1: Sync structure (campaigns, adsets, ads)
@@ -83,6 +102,32 @@ export async function performFullSync(syncType: "meta_ads_auto" | "meta_ads_manu
       await db.upsertAdAd({ adId: ad.id, adsetId: ad.adset_id, campaignId: ad.campaign_id, name: ad.name, status: ad.status, urlTags: ad.url_tags });
     }
     adCount = ads.length;
+
+    // Step 1b: Sync creatives (thumbnail/video/copy) for the ads we just upserted.
+    // Wrapped in its own try so a creative-fetch failure doesn't abort the whole
+    // sync — spend/insights data is more critical than creative metadata.
+    try {
+      const adIds = ads.map((a) => a.id).filter(Boolean);
+      const result = await metaAds.fetchAdCreativesWithStats(adIds);
+      creativesStats = {
+        adsSeen: result.stats.adsSeen,
+        adsWithCreative: result.stats.adsWithCreative,
+        creativesParsed: result.stats.creativesParsed,
+        videosExpanded: result.stats.videosExpanded,
+        lastError: result.stats.lastError,
+      };
+      for (const c of result.creatives) {
+        await db.upsertAdCreative(c);
+        creativesSynced += 1;
+      }
+      if (result.stats.lastError && creativesSynced === 0) {
+        creativesError = result.stats.lastError;
+      }
+      console.log(`[CronSync] Creatives: ${result.stats.adsSeen} seen, ${result.stats.adsWithCreative} with creative, ${creativesSynced} upserted`);
+    } catch (err: any) {
+      creativesError = err?.message ?? "fetchAdCreatives failed";
+      console.error("[CronSync] Creative sync failed:", creativesError);
+    }
 
     // Step 2: Sync insights at ad level for current month
     const insights = await metaAds.fetchInsights(dateFrom, dateTo, "ad");
@@ -139,9 +184,20 @@ export async function performFullSync(syncType: "meta_ads_auto" | "meta_ads_manu
       details: JSON.stringify({ campaigns: campaignCount, adsets: adsetCount, ads: adCount, insights: insightCount }),
     });
 
-    console.log(`[CronSync] ✅ Sync complete: ${campaignCount} campaigns, ${adsetCount} adsets, ${adCount} ads, ${insightCount} insights (${durationMs}ms)`);
+    console.log(`[CronSync] ✅ Sync complete: ${campaignCount} campaigns, ${adsetCount} adsets, ${adCount} ads, ${creativesSynced} creatives, ${insightCount} insights (${durationMs}ms)`);
 
-    return { success: true, logId, campaigns: campaignCount, adsets: adsetCount, ads: adCount, insights: insightCount, durationMs };
+    return {
+      success: true,
+      logId,
+      campaigns: campaignCount,
+      adsets: adsetCount,
+      ads: adCount,
+      insights: insightCount,
+      creatives: creativesSynced,
+      creativesError,
+      creativesStats,
+      durationMs,
+    };
   } catch (err: any) {
     const durationMs = Date.now() - startTime;
     const errorMsg = err.message || "Unknown error";
@@ -158,7 +214,19 @@ export async function performFullSync(syncType: "meta_ads_auto" | "meta_ads_manu
 
     console.error(`[CronSync] ❌ Sync failed after ${durationMs}ms: ${errorMsg}`);
 
-    return { success: false, logId, campaigns: campaignCount, adsets: adsetCount, ads: adCount, insights: insightCount, durationMs, error: errorMsg };
+    return {
+      success: false,
+      logId,
+      campaigns: campaignCount,
+      adsets: adsetCount,
+      ads: adCount,
+      insights: insightCount,
+      creatives: creativesSynced,
+      creativesError,
+      creativesStats,
+      durationMs,
+      error: errorMsg,
+    };
   } finally {
     isSyncing = false;
   }

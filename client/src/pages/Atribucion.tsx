@@ -206,7 +206,28 @@ export default function Atribucion() {
   const fullSync = trpc.metaAds.fullSync.useMutation({
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(`Sync completo: ${data.campaigns} campañas, ${data.ads} anuncios, ${data.insights} insights (${(data.durationMs / 1000).toFixed(1)}s)`);
+        toast.success(
+          `Sync completo: ${data.campaigns} campañas, ${data.ads} anuncios, ${data.creatives} creativos, ${data.insights} insights (${(data.durationMs / 1000).toFixed(1)}s)`
+        );
+        // Si la sync de creativos devolvió 0 pese a tener ads, surface el por qué:
+        // o bien el token no expande `creative` (creativesError), o el batch
+        // devolvió ads vacíos (stats.adsWithCreative = 0). Si no, el operador
+        // cree que todo salió bien y luego no entiende por qué no ve videos.
+        if (data.creativesError) {
+          toast.error(
+            `Creativos no sincronizados: ${data.creativesError}. La metadata visual (video/thumbnail) no está disponible hasta arreglar el token.`,
+            { duration: 10000 }
+          );
+        } else if (data.creatives === 0 && data.ads > 0) {
+          const s = data.creativesStats;
+          const detail = s
+            ? ` (${s.adsSeen} ads vistos, ${s.adsWithCreative} con creative expandido${s.lastError ? `, último error: ${s.lastError}` : ""})`
+            : "";
+          toast.warning(
+            `Se sincronizaron ${data.ads} anuncios pero 0 creativos${detail}. Corré "Diagnóstico de creativos" para ver el payload crudo.`,
+            { duration: 15000 }
+          );
+        }
       } else {
         toast.error(`Error: ${data.error}`);
       }
