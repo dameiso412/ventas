@@ -2767,6 +2767,78 @@ export async function getLeadCountByUtmCampaign(dateFrom?: string, dateTo?: stri
     .groupBy(leads.utmCampaign);
 }
 
+// ==================== LANDING PAGE METRICS ====================
+
+/**
+ * One aggregated row per landing slug for the "Por Landing" dashboard tab.
+ * `landingSlug` may be null — that row surfaces as "Sin landing" in the UI
+ * and is the canary for GHL misconfiguration (a landing whose automation
+ * forgot to set `landing_slug` before firing the webhook).
+ */
+export interface LandingMetricsRow {
+  landingSlug: string | null;
+  totalLeads: number;
+  citas: number;
+  demosAsistidas: number;
+  ventas: number;
+  totalCashCollected: number;
+  hot: number;
+  warm: number;
+  triageHot: number;
+}
+
+/**
+ * Lead metrics grouped by `landingSlug` for the attribution dashboard.
+ *
+ * Groups ALL leads (including `landingSlug IS NULL`) so the UI can show the
+ * "Sin landing" row as a transparency signal — if it's a large share of
+ * recent leads, GHL is not sending the slug for some source and the marketer
+ * needs to fix the automation (see docs/landing-tracking-ghl.md).
+ *
+ * Date filter uses `createdAt` (not `fecha`) because `fecha` is the
+ * appointment date and we want to measure landings by the day they
+ * generated the lead, not the day the lead was booked for a demo.
+ */
+export async function getLeadMetricsByLanding(opts?: { dateFrom?: string; dateTo?: string }): Promise<LandingMetricsRow[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions: any[] = [];
+  if (opts?.dateFrom) conditions.push(gte(leads.createdAt, new Date(opts.dateFrom)));
+  if (opts?.dateTo) conditions.push(lte(leads.createdAt, new Date(opts.dateTo)));
+
+  const rows = await db.select({
+    landingSlug: leads.landingSlug,
+    totalLeads: sql<number>`COUNT(*)`,
+    citas: sql<number>`SUM(CASE WHEN ${leads.categoria} = 'AGENDA' THEN 1 ELSE 0 END)`,
+    demosAsistidas: sql<number>`SUM(CASE WHEN ${leads.asistencia} = 'ASISTIÓ' THEN 1 ELSE 0 END)`,
+    ventas: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN 1 ELSE 0 END)`,
+    totalCashCollected: sql<number>`SUM(CASE WHEN ${leads.outcome} = 'VENTA' THEN COALESCE(${leads.cashCollected}, 0) ELSE 0 END)`,
+    hot: sql<number>`SUM(CASE WHEN ${leads.scoreLabel} = 'HOT' THEN 1 ELSE 0 END)`,
+    warm: sql<number>`SUM(CASE WHEN ${leads.scoreLabel} = 'WARM' THEN 1 ELSE 0 END)`,
+    // `triage` is free-text from the closer's review. Best-effort keyword match
+    // on "hot"/"caliente" — NOT a hard signal, but useful as a qualitative
+    // overlay when the setter left a triage note. Cheap COUNT so the row
+    // stays light even for big date ranges.
+    triageHot: sql<number>`SUM(CASE WHEN ${leads.triage} ILIKE '%hot%' OR ${leads.triage} ILIKE '%caliente%' THEN 1 ELSE 0 END)`,
+  })
+    .from(leads)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(leads.landingSlug)
+    .orderBy(desc(sql<number>`COUNT(*)`));
+
+  return rows.map((r) => ({
+    landingSlug: r.landingSlug ?? null,
+    totalLeads: Number(r.totalLeads ?? 0),
+    citas: Number(r.citas ?? 0),
+    demosAsistidas: Number(r.demosAsistidas ?? 0),
+    ventas: Number(r.ventas ?? 0),
+    totalCashCollected: Number(r.totalCashCollected ?? 0),
+    hot: Number(r.hot ?? 0),
+    warm: Number(r.warm ?? 0),
+    triageHot: Number(r.triageHot ?? 0),
+  }));
+}
+
 // ==================== UTM AUDIT / COMPLETENESS ====================
 
 export interface UtmCompletenessRow {

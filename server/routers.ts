@@ -1531,6 +1531,16 @@ export const appRouter = router({
       .query(({ input }) => db.getWebhookLogById(input.id)),
 
     /**
+     * Conversion funnel metrics grouped by landing slug (EVTS-IN, DIAGNOSTICO,
+     * HOME, OTRO, plus a "Sin landing" bucket for landingSlug IS NULL).
+     * Powers the "Por Landing" tab in /atribucion. See
+     * docs/landing-tracking-ghl.md for how the slug gets populated.
+     */
+    byLanding: publicProcedure
+      .input(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
+      .query(({ input }) => db.getLeadMetricsByLanding(input ?? undefined)),
+
+    /**
      * Retroactively repair attribution for leads with missing UTMs by
      * re-parsing their stored webhook_log payloads with the current parser.
      * Never overwrites existing values. Safe to run as a batch — returns

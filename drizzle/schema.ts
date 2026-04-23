@@ -131,6 +131,15 @@ export const leads = pgTable("leads", {
   gclid: varchar("gclid", { length: 500 }),
   /** Landing URL where the lead aterrizó (before conversion). */
   landingUrl: text("landingUrl"),
+  /**
+   * Normalized landing slug (EVTS-IN | DIAGNOSTICO | HOME | OTRO). Populated
+   * either from `landing_slug` in the GHL webhook payload (preferred — set as
+   * a custom field on each landing's automation) or derived from `landingUrl`
+   * via `deriveLandingSlug()` in server/_core/landings.ts. NULL when neither
+   * is available, which surfaces in the UI as "Sin landing" — acts as an
+   * alarm that GHL config is missing for some source.
+   */
+  landingSlug: varchar("landingSlug", { length: 50 }),
   /** Referrer header at time of webhook capture — populated when webhook carries it. */
   attributionReferrer: varchar("attributionReferrer", { length: 500 }),
   // Creative-level attribution (resolved at webhook ingestion from UTM values).

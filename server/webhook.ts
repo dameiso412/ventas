@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
+import { resolveLandingSlug } from "./_core/landings";
 import { getSubscriberInfo, setCustomField } from "./manychat";
 import {
   verifyWebhookSignature as stripeVerifySignature,
@@ -230,6 +231,11 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
     const fbclid = body.fbclid || body.fbc || body.fb_click_id || (req.query.fbclid as string) || null;
     const gclid = body.gclid || body.gcl_id || (req.query.gclid as string) || null;
     const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
+    // GHL can be configured to send a `landing_slug` custom field per landing
+    // automation — preferred source (see docs/landing-tracking-ghl.md). Falls
+    // back to regex derivation from landingUrl if the explicit slug is absent.
+    const landingSlugRaw = body.landing_slug || body.landingSlug || (req.query.landing_slug as string) || null;
+    const landingSlug = resolveLandingSlug({ explicitSlug: landingSlugRaw, landingUrl });
     const attributionReferrer = body.referrer || body.referer || (req.headers.referer as string) || null;
 
     // Promote numeric UTM values to first-class Meta IDs when the ad used
@@ -308,6 +314,7 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       if (fbclid && !(existingLead as any).fbclid) updateData.fbclid = fbclid;
       if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
       if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
+      if (landingSlug && !(existingLead as any).landingSlug) updateData.landingSlug = landingSlug;
       if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
       // Meta IDs: backfill only if empty — a reschedule shouldn't overwrite an
       // attribution we already resolved from the original lead creation.
@@ -387,6 +394,7 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       ...(fbclid ? { fbclid } : {}),
       ...(gclid ? { gclid } : {}),
       ...(landingUrl ? { landingUrl } : {}),
+      ...(landingSlug ? { landingSlug } : {}),
       ...(attributionReferrer ? { attributionReferrer } : {}),
       // Meta-resolved IDs (only if UTMs used Meta's macro format).
       ...metaIds,
@@ -944,6 +952,8 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
     const fbclid = body.fbclid || body.fbc || (req.query.fbclid as string) || null;
     const gclid = body.gclid || (req.query.gclid as string) || null;
     const landingUrl = body.landing_url || body.landingUrl || body.page_url || body.pageUrl || null;
+    const landingSlugRaw = body.landing_slug || body.landingSlug || (req.query.landing_slug as string) || null;
+    const landingSlug = resolveLandingSlug({ explicitSlug: landingSlugRaw, landingUrl });
     const attributionReferrer = body.referrer || body.http_referrer || body.httpReferrer || null;
 
     // Promote numeric UTM values to Meta IDs (see lead webhook for rationale).
@@ -988,6 +998,7 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       if (fbclid && !(existingLead as any).fbclid) updateData.fbclid = fbclid;
       if (gclid && !(existingLead as any).gclid) updateData.gclid = gclid;
       if (landingUrl && !(existingLead as any).landingUrl) updateData.landingUrl = landingUrl;
+      if (landingSlug && !(existingLead as any).landingSlug) updateData.landingSlug = landingSlug;
       if (attributionReferrer && !(existingLead as any).attributionReferrer) updateData.attributionReferrer = attributionReferrer;
       // Meta-resolved IDs: backfill only if empty.
       if (metaIds.metaAdId && !(existingLead as any).metaAdId) updateData.metaAdId = metaIds.metaAdId;
@@ -1046,6 +1057,7 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
       ...(fbclid ? { fbclid } : {}),
       ...(gclid ? { gclid } : {}),
       ...(landingUrl ? { landingUrl } : {}),
+      ...(landingSlug ? { landingSlug } : {}),
       ...(attributionReferrer ? { attributionReferrer } : {}),
       ...metaIds,
     };
@@ -1468,6 +1480,11 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
     // capture it so we can reconcile with Meta Ads data later.
     const mcFbclid = customFields.fbclid || customFields.fbc || null;
     const mcLandingUrl = customFields.landing_url || customFields.landingUrl || null;
+    // ManyChat flows can set a `landing_slug` custom field when the DM was
+    // triggered from a specific landing's ad — same precedence as the lead
+    // webhook (explicit slug wins, URL derivation is the fallback).
+    const mcLandingSlugRaw = customFields.landing_slug || customFields.landingSlug || null;
+    const mcLandingSlug = resolveLandingSlug({ explicitSlug: mcLandingSlugRaw, landingUrl: mcLandingUrl });
 
     // Promote numeric IDs. ManyChat has an extra advantage here: `last_ad_id` /
     // `ad_id` / `adset_id` custom fields are ALREADY pure IDs when present, so
@@ -1520,6 +1537,7 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
       if (mcUtmTerm && !lead.utmTerm) updateData.utmTerm = mcUtmTerm;
       if (mcFbclid && !(lead as any).fbclid) updateData.fbclid = mcFbclid;
       if (mcLandingUrl && !(lead as any).landingUrl) updateData.landingUrl = mcLandingUrl;
+      if (mcLandingSlug && !(lead as any).landingSlug) updateData.landingSlug = mcLandingSlug;
       // Meta-resolved IDs: backfill only if empty.
       if (mcMetaIds.metaAdId && !(lead as any).metaAdId) updateData.metaAdId = mcMetaIds.metaAdId;
       if (mcMetaIds.metaAdsetId && !(lead as any).metaAdsetId) updateData.metaAdsetId = mcMetaIds.metaAdsetId;
@@ -1548,6 +1566,7 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
         ...(mcUtmTerm ? { utmTerm: mcUtmTerm } : {}),
         ...(mcFbclid ? { fbclid: mcFbclid } : {}),
         ...(mcLandingUrl ? { landingUrl: mcLandingUrl } : {}),
+        ...(mcLandingSlug ? { landingSlug: mcLandingSlug } : {}),
         ...mcMetaIds,
       } as any);
 

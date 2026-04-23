@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import AdCreativePreview from "@/components/AdCreativePreview";
+import LandingPerformanceCard from "./atribucion/LandingPerformanceCard";
 import { toast } from "sonner";
 import {
   RefreshCw,
@@ -614,6 +615,9 @@ export default function Atribucion() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Landing Performance — lead-side view per landing page (Lovable → GHL) */}
+      <LandingPerformanceCard dateFrom={dateFrom} dateTo={dateTo} />
 
       {/* UTM Configuration */}
       <Card>
