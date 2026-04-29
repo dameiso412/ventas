@@ -3,7 +3,7 @@ import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
 import { resolveLandingSlug } from "./_core/landings";
-import { assignViaRoundRobin, notifyAgendaAssigned } from "./_core/round-robin";
+import { assignViaRoundRobin, notifyAgendaAssigned, notifyNewLead } from "./_core/round-robin";
 import { getSubscriberInfo, setCustomField } from "./manychat";
 import {
   verifyWebhookSignature as stripeVerifySignature,
@@ -1125,6 +1125,14 @@ webhookRouter.post("/api/webhook/prospect", async (req: Request, res: Response) 
 
     const leadId = await db.createLead(leadData);
 
+    // Slack notif: nuevo lead en cola. Fire-and-forget — Slack caído no
+    // bloquea la respuesta al webhook. El score puede no estar todavía
+    // (llega vía webhook separado /api/webhook/score), por eso no lo pasamos.
+    notifyNewLead({
+      leadId, nombre, correo, telefono, instagram,
+      origen: "ADS", utmSource, utmCampaign,
+    }).catch((e: any) => console.error("[Webhook:Prospect] Slack notif failed:", e?.message));
+
     // Dual-write to universal profile
     await writeDataEntry(leadId, "prospect", buildDataFields([
       { key: "nombre", label: "Nombre", value: nombre, category: "contact" },
@@ -1633,6 +1641,20 @@ webhookRouter.post("/api/webhook/manychat", async (req: Request, res: Response) 
 
       lead = { id: newLeadId };
       console.log(`[Webhook:ManyChat] Created new lead #${newLeadId} from ManyChat subscriber ${subscriberId}`);
+
+      // Slack notif: lead nuevo desde IG. Origen INSTAGRAM hace que el alert
+      // muestre el emoji 📸. No tiene score todavía (eso llega después por
+      // otro webhook o evaluación manual).
+      notifyNewLead({
+        leadId: newLeadId,
+        nombre: nombre || igHandle || null,
+        correo: email,
+        telefono: phone,
+        instagram: igHandle,
+        origen: "INSTAGRAM",
+        utmSource: mcUtmSource,
+        utmCampaign: mcUtmCampaign,
+      }).catch((e: any) => console.error("[Webhook:ManyChat] Slack notif failed:", e?.message));
     }
 
     // Store CRM lead ID back in ManyChat custom field

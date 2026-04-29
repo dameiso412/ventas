@@ -9,7 +9,7 @@ import * as metaAds from "./meta-ads";
 import { reanalyzeTranscript } from "./_core/transcription";
 import { performFullSync } from "./cron-meta-sync";
 import { sendSlackAlert, isSlackConfigured, crmUrls } from "./_core/slack";
-import { assignViaRoundRobin, notifyAgendaAssigned } from "./_core/round-robin";
+import { assignViaRoundRobin, notifyAgendaAssigned, notifyNewLead } from "./_core/round-robin";
 import {
   COST_BENCHMARKS, RATE_BENCHMARKS, evaluateMetric,
   CONSTRAINT_SCENARIOS, HEALTH_COLORS,
@@ -107,6 +107,21 @@ export const appRouter = router({
               linkCRM: null,
             }).catch((e: any) => console.error("[leads.create] Slack notif failed:", e?.message));
           }
+        } else if (input.categoria === "LEAD") {
+          // Slack notif para LEAD nuevo creado manualmente desde la UI.
+          // Severity escala con el score si vino del form (HOT/WARM); sin
+          // score → info y prompt al equipo a tomarlo.
+          notifyNewLead({
+            leadId: id,
+            nombre: input.nombre ?? null,
+            correo: input.correo ?? null,
+            telefono: input.telefono ?? null,
+            instagram: input.instagram ?? null,
+            origen: input.origen ?? null,
+            scoreLabel: input.scoreLabel ?? null,
+            score: input.score ?? null,
+            setterAsignado: input.setterAsignado ?? null,
+          }).catch((e: any) => console.error("[leads.create] LEAD Slack notif failed:", e?.message));
         }
 
         return { id };

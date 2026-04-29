@@ -177,3 +177,99 @@ export async function notifyAgendaAssigned(args: {
     actions,
   });
 }
+
+/**
+ * Slack notif al canal cuando entra un LEAD nuevo (no agenda — eso lo cubre
+ * notifyAgendaAssigned). Severity escala con el score:
+ *   HOT  → critical (setter llamálo ya, ventana caliente)
+ *   WARM → warning  (prioridad alta pero no crítica)
+ *   else → info     (heads-up, va a la cola)
+ *
+ * Disparado desde:
+ *   - server/webhook.ts /api/webhook/prospect (form Lovable / GHL → categoria=LEAD)
+ *   - server/webhook.ts /api/webhook/manychat (DM IG → categoria=LEAD)
+ *   - server/routers.ts leads.create (UI manual con categoria=LEAD)
+ *
+ * El round-robin no aplica a leads (decisión de scope original — solo agendas
+ * tienen ownership automatizado). El alert prompts al equipo a tomar el lead
+ * vía botón "Cola de trabajo".
+ */
+export async function notifyNewLead(args: {
+  leadId: number;
+  nombre?: string | null;
+  correo?: string | null;
+  telefono?: string | null;
+  instagram?: string | null;
+  origen?: string | null;
+  utmSource?: string | null;
+  utmCampaign?: string | null;
+  scoreLabel?: string | null;
+  score?: number | null;
+  setterAsignado?: string | null;
+}): Promise<void> {
+  const label = (args.scoreLabel ?? "").toUpperCase();
+  const severity: "critical" | "warning" | "info" =
+    label === "HOT" ? "critical" : label === "WARM" ? "warning" : "info";
+  const emoji =
+    label === "HOT" ? "🔥" : label === "WARM" ? "🟡" : args.origen === "INSTAGRAM" ? "📸" : "📥";
+
+  const displayName = args.nombre || args.correo || args.instagram || `Lead #${args.leadId}`;
+
+  // Construct fields. Skip empty values to keep the card tight — no
+  // "Teléfono: —" rows.
+  const fields: Array<{ label: string; value: string }> = [
+    { label: "🆔 Lead", value: `#${args.leadId}` },
+  ];
+  if (args.origen) fields.push({ label: "📍 Origen", value: args.origen });
+  if (args.scoreLabel) {
+    const scorePart = typeof args.score === "number" ? ` (${args.score})` : "";
+    fields.push({ label: "🎯 Score", value: `*${args.scoreLabel}*${scorePart}` });
+  }
+  if (args.correo) fields.push({ label: "✉️ Correo", value: args.correo });
+  if (args.telefono) fields.push({ label: "📱 Teléfono", value: args.telefono });
+  if (args.instagram) fields.push({ label: "📸 Instagram", value: args.instagram });
+  if (args.utmSource || args.utmCampaign) {
+    const utmParts = [args.utmSource, args.utmCampaign].filter(Boolean).join(" / ");
+    fields.push({ label: "📊 UTM", value: utmParts });
+  }
+  if (args.setterAsignado) {
+    fields.push({ label: "👤 Setter", value: `*${args.setterAsignado}*` });
+  }
+
+  // Action buttons. "Abrir lead" siempre primero (acción más probable).
+  // "Cola de trabajo" cuando no hay setter asignado — dirige al equipo a
+  // tomar el lead. "Round-Robin" como último para que el admin pueda
+  // configurar reglas si nota que los leads quedan huérfanos.
+  const actions: Array<{ label: string; url: string; emoji?: string; style?: "primary" | "danger" }> = [
+    { label: "Abrir lead", url: crmUrls.lead(args.leadId), emoji: "🔗", style: "primary" },
+  ];
+  if (!args.setterAsignado) {
+    actions.push({ label: "Cola de trabajo", url: crmUrls.colaTrabajo(), emoji: "📋" });
+  }
+
+  // Body line: deja claro de un vistazo qué tipo de lead es y de dónde vino.
+  const bodyParts: string[] = [];
+  if (label === "HOT") bodyParts.push("🔥 *Lead HOT — llamálo en los próximos minutos.*");
+  else if (label === "WARM") bodyParts.push("🟡 Lead WARM — prioridad alta.");
+  if (args.origen) {
+    const origenLabel: Record<string, string> = {
+      ADS: "vino de un anuncio",
+      REFERIDO: "es referido",
+      ORGANICO: "vino orgánico",
+      INSTAGRAM: "vino por DM de Instagram",
+    };
+    bodyParts.push(origenLabel[args.origen] ?? `origen: ${args.origen}`);
+  }
+  const body = bodyParts.length > 0
+    ? bodyParts.join(" · ")
+    : "Lead nuevo registrado. Revisalo cuando puedas.";
+
+  await sendSlackAlert({
+    severity,
+    emoji,
+    title: `Nuevo lead → ${displayName}`,
+    body,
+    fields,
+    actions,
+  });
+}
