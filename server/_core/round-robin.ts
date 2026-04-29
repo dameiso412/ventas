@@ -29,7 +29,7 @@
  *     pesado en el path crítico del webhook.
  */
 import * as db from "../db";
-import { sendSlackAlert } from "./slack";
+import { sendSlackAlert, crmUrls } from "./slack";
 
 export interface RoundRobinResult {
   setterName: string;
@@ -142,7 +142,7 @@ export async function notifyAgendaAssigned(args: {
   tipoCita: "DEMO" | "INTRO";
   linkCRM?: string | null;
 }): Promise<void> {
-  const setterText = args.setterName ? `*${args.setterName}*` : "_sin asignar_";
+  const setterText = args.setterName ?? "Sin asignar";
   const fechaStr = args.fecha.toLocaleString("es-CL", {
     timeZone: "America/Santiago",
     dateStyle: "short",
@@ -150,17 +150,30 @@ export async function notifyAgendaAssigned(args: {
   });
 
   const fields: Array<{ label: string; value: string }> = [
-    { label: "Setter", value: args.setterName ?? "—" },
-    { label: "Tipo", value: args.tipoCita },
+    { label: "👤 Setter", value: args.setterName ? `*${args.setterName}*` : "_sin asignar_" },
+    { label: "📋 Tipo", value: args.tipoCita },
+    { label: "🗓️ Fecha", value: fechaStr },
+    { label: "🆔 Lead", value: `#${args.leadId}` },
   ];
-  if (args.correo) fields.push({ label: "Correo", value: args.correo });
-  if (args.telefono) fields.push({ label: "Teléfono", value: args.telefono });
-  if (args.linkCRM) fields.push({ label: "CRM", value: args.linkCRM });
+  if (args.correo) fields.push({ label: "✉️ Correo", value: args.correo });
+  if (args.telefono) fields.push({ label: "📱 Teléfono", value: args.telefono });
+
+  // Action buttons: GHL link first (where the conversation lives) when
+  // available, then deep link to the lead in our CRM.
+  const actions: Array<{ label: string; url: string; emoji?: string; style?: "primary" | "danger" }> = [
+    { label: "Abrir en CRM", url: crmUrls.lead(args.leadId), emoji: "🔗", style: "primary" },
+  ];
+  if (args.linkCRM) {
+    actions.push({ label: "Abrir en GHL", url: args.linkCRM, emoji: "📞" });
+  }
+  actions.push({ label: "Round-Robin", url: crmUrls.roundRobin(), emoji: "🔀" });
 
   await sendSlackAlert({
-    severity: "info",
-    title: `Nueva agenda → ${setterText}`,
-    body: `${args.tipoCita} con *${args.nombre}* el ${fechaStr}.`,
+    severity: args.setterName ? "success" : "warning",
+    title: `Nueva agenda ${args.tipoCita} → ${setterText}`,
+    body: `${args.nombre || "_lead sin nombre_"} agendó una cita para el *${fechaStr}*.`,
+    emoji: args.setterName ? "🎯" : "⚠️",
     fields,
+    actions,
   });
 }

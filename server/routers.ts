@@ -8,7 +8,7 @@ import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1"
 import * as metaAds from "./meta-ads";
 import { reanalyzeTranscript } from "./_core/transcription";
 import { performFullSync } from "./cron-meta-sync";
-import { sendSlackAlert, isSlackConfigured } from "./_core/slack";
+import { sendSlackAlert, isSlackConfigured, crmUrls } from "./_core/slack";
 import { assignViaRoundRobin, notifyAgendaAssigned } from "./_core/round-robin";
 import {
   COST_BENCHMARKS, RATE_BENCHMARKS, evaluateMetric,
@@ -1248,8 +1248,19 @@ export const appRouter = router({
           const leadName = lead?.nombre || lead?.correo || `Lead #${input.leadId}`;
           await sendSlackAlert({
             severity: "critical",
-            title: `NO SHOW — Protocolo anti-no-show activado`,
-            body: `• *Lead:* ${leadName}\n• *Closer:* ${input.closerAsignado || "N/A"}\n• *Follow-up:* Creado como RED_HOT (#${followUpId})`,
+            title: `NO SHOW: ${leadName}`,
+            body: "Protocolo anti-no-show activado. Se creó un follow-up RED_HOT para recuperar el lead — actuá en las próximas horas.",
+            emoji: "🚫",
+            fields: [
+              { label: "👤 Lead", value: leadName },
+              { label: "🆔 ID", value: `#${input.leadId}` },
+              { label: "🎯 Closer", value: input.closerAsignado || "_N/A_" },
+              { label: "🔥 Follow-up", value: `RED_HOT #${followUpId}` },
+            ],
+            actions: [
+              { label: "Abrir lead", url: crmUrls.lead(input.leadId), emoji: "🔗", style: "primary" },
+              { label: "Ver Follow-Ups", url: crmUrls.followUps(), emoji: "📋" },
+            ],
           });
         } catch (err) {
           console.error("[NoShow] Slack alert failed:", err);
@@ -1722,12 +1733,16 @@ export const appRouter = router({
       }
       try {
         const sent = await sendSlackAlert({
-          severity: "info",
-          title: "✅ Test desde CRM",
-          body: "Si ves este mensaje, la integración Slack funciona. Las notificaciones de round-robin van a llegar acá.",
+          severity: "success",
+          title: "Test de Slack desde el CRM",
+          body: "Si ves este mensaje, la integración Slack está funcionando 🎉. Las notificaciones de agendas, follow-ups y alertas críticas van a llegar a este canal.",
           fields: [
-            { label: "Origen", value: "/admin/round-robin · botón Test Slack" },
-            { label: "Hora", value: new Date().toLocaleString("es-CL", { timeZone: "America/Santiago" }) },
+            { label: "🔧 Origen", value: "Admin · Round-Robin · botón Test Slack" },
+            { label: "🕒 Hora", value: new Date().toLocaleString("es-CL", { timeZone: "America/Santiago" }) },
+          ],
+          actions: [
+            { label: "Configurar Round-Robin", url: crmUrls.roundRobin(), emoji: "🔀", style: "primary" },
+            { label: "Ver Alertas", url: crmUrls.alertas(), emoji: "🚨" },
           ],
         });
         return { configured: true, sent, error: sent ? undefined : "Slack rechazó el POST. Revisá los logs del server." };

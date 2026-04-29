@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { ENV } from "./env";
 import { updateCallAudit, createLeadDataEntry } from "../db";
-import { sendSlackAlert } from "./slack";
+import { sendSlackAlert, crmUrls, crmLink } from "./slack";
 
 let _openai: OpenAI | null = null;
 let _anthropic: Anthropic | null = null;
@@ -295,13 +295,28 @@ async function analyzeTranscript(
     const grade = audit.grading ?? 0;
     const leadLabel = leadContext?.leadName || (leadContext?.leadId ? `Lead #${leadContext.leadId}` : "Sin lead");
     const closerLabel = leadContext?.closer || "N/A";
+    const fields: Array<{ label: string; value: string }> = [
+      { label: "👤 Lead", value: leadLabel },
+      { label: "🎯 Closer", value: closerLabel },
+      { label: "📊 Nota", value: `*${grade}/10*` },
+      { label: "📅 Demo", value: audit.demoAgendada ? "Sí ✅" : "No ❌" },
+    ];
+    if (audit.etapasCompletadas) {
+      fields.push({ label: "📋 Etapas", value: audit.etapasCompletadas });
+    }
+    const actions: Array<{ label: string; url: string; emoji?: string; style?: "primary" | "danger" }> = [
+      { label: "Ver auditoría", url: crmLink(`/marketing/auditoria/${auditId}`), emoji: "🎙️", style: "primary" },
+    ];
+    if (leadContext?.leadId) {
+      actions.push({ label: "Abrir lead", url: crmUrls.lead(leadContext.leadId), emoji: "🔗" });
+    }
     await sendSlackAlert({
       severity: grade >= 7 ? "success" : grade >= 4 ? "info" : "warning",
-      title: `Análisis de triage completado — ${grade}/10`,
-      body: `• *Lead:* ${leadLabel}\n• *Closer:* ${closerLabel}\n• *Demo agendada:* ${audit.demoAgendada ? "Sí ✅" : "No ❌"}`,
-      fields: audit.etapasCompletadas
-        ? [{ label: "Etapas completadas", value: audit.etapasCompletadas }]
-        : undefined,
+      title: `Triage analizado — ${leadLabel} (${grade}/10)`,
+      body: `Se completó el análisis IA de la llamada. Closer: *${closerLabel}*.`,
+      emoji: grade >= 7 ? "🟢" : grade >= 4 ? "🟡" : "🔴",
+      fields,
+      actions,
     });
   } catch (err) {
     console.error(`[Transcription] Slack notification failed for audit #${auditId}:`, err);

@@ -13,7 +13,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db";
-import { sendSlackMessage, sendSlackAlert, isSlackConfigured } from "./_core/slack";
+import { sendSlackMessage, sendSlackAlert, isSlackConfigured, crmUrls } from "./_core/slack";
 import { ENV } from "./_core/env";
 
 // ─── Intervals ───────────────────────────────────────────────
@@ -104,14 +104,20 @@ async function runPulseCheck() {
     if (stl.length > 0) {
       const hash = computeHash(stl.map((l) => l.id));
       if (shouldSend("speed-to-lead", hash)) {
-        const lines = stl
-          .slice(0, 10)
-          .map((l) => `• *${l.nombre || "Sin nombre"}* — ${l.minutesSinceCreated} min (setter: ${l.setterAsignado || "sin asignar"})`)
-          .join("\n");
         await sendSlackAlert({
           severity: "critical",
-          title: `${stl.length} lead(s) sin contactar hace +30 min`,
-          body: lines + (stl.length > 10 ? `\n_...y ${stl.length - 10} más_` : ""),
+          title: `${stl.length} lead${stl.length === 1 ? "" : "s"} sin contactar hace +30 min`,
+          body: "Cada minuto perdido cae el contact rate. Revisá la cola de trabajo y contactá ya.",
+          items: stl.map((l) => ({
+            text: `• *${l.nombre || "Sin nombre"}* — ${l.minutesSinceCreated} min (setter: ${l.setterAsignado || "_sin asignar_"})`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Abrir lead",
+          })),
+          itemsTruncatedActionUrl: crmUrls.colaTrabajo(),
+          itemsTruncatedActionLabel: "Ver cola completa",
+          actions: [
+            { label: "Abrir cola de trabajo", url: crmUrls.colaTrabajo(), emoji: "📋", style: "primary" },
+          ],
         });
         markSent("speed-to-lead", hash);
       }
@@ -122,14 +128,21 @@ async function runPulseCheck() {
     if (unassigned.length > 0) {
       const hash = computeHash(unassigned.map((l) => l.id));
       if (shouldSend("unassigned", hash)) {
-        const lines = unassigned
-          .slice(0, 10)
-          .map((l) => `• *${l.nombre || l.correo || "ID " + l.id}*`)
-          .join("\n");
         await sendSlackAlert({
           severity: "warning",
-          title: `${unassigned.length} lead(s) sin setter asignado`,
-          body: lines + (unassigned.length > 10 ? `\n_...y ${unassigned.length - 10} más_` : ""),
+          title: `${unassigned.length} lead${unassigned.length === 1 ? "" : "s"} sin setter asignado`,
+          body: "Activá el round-robin o asigná manualmente para que nadie quede huérfano.",
+          items: unassigned.map((l) => ({
+            text: `• *${l.nombre || l.correo || "ID " + l.id}*`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Asignar",
+          })),
+          itemsTruncatedActionUrl: crmUrls.colaTrabajo(),
+          itemsTruncatedActionLabel: "Ver todos",
+          actions: [
+            { label: "Configurar Round-Robin", url: crmUrls.roundRobin(), emoji: "🔀", style: "primary" },
+            { label: "Cola de trabajo", url: crmUrls.colaTrabajo(), emoji: "📋" },
+          ],
         });
         markSent("unassigned", hash);
       }
@@ -140,14 +153,16 @@ async function runPulseCheck() {
     if (stale.length > 0) {
       const hash = computeHash(stale.map((l) => l.id));
       if (shouldSend("stale-seguimiento", hash)) {
-        const lines = stale
-          .slice(0, 10)
-          .map((l) => `• *${l.nombre || "ID " + l.id}* — closer: ${l.closer || "N/A"}`)
-          .join("\n");
         await sendSlackAlert({
           severity: "warning",
-          title: `${stale.length} seguimiento(s) estancado(s) (+72h)`,
-          body: lines + (stale.length > 10 ? `\n_...y ${stale.length - 10} más_` : ""),
+          title: `${stale.length} seguimiento${stale.length === 1 ? "" : "s"} estancado${stale.length === 1 ? "" : "s"} (+72h)`,
+          body: "Estos leads quedaron en SEGUIMIENTO sin movimiento por más de 3 días.",
+          items: stale.map((l) => ({
+            text: `• *${l.nombre || "ID " + l.id}* — closer: ${l.closer || "_N/A_"}`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Abrir",
+          })),
+          itemsTruncatedActionUrl: crmUrls.followUps(),
         });
         markSent("stale-seguimiento", hash);
       }
@@ -158,17 +173,22 @@ async function runPulseCheck() {
     if (overdue.length > 0) {
       const hash = computeHash(overdue.map((l) => l.id));
       if (shouldSend("overdue-attendance", hash)) {
-        const lines = overdue
-          .slice(0, 10)
-          .map((l) => {
-            const time = l.fecha ? new Date(l.fecha).toLocaleString("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit" }) : "?";
-            return `• *${l.nombre || l.correo || "ID " + l.id}* — cita a las ${time} (closer: ${l.closer || "N/A"})`;
-          })
-          .join("\n");
         await sendSlackAlert({
           severity: "warning",
-          title: `${overdue.length} cita(s) sin registrar asistencia`,
-          body: lines + (overdue.length > 10 ? `\n_...y ${overdue.length - 10} más_` : ""),
+          title: `${overdue.length} cita${overdue.length === 1 ? "" : "s"} sin registrar asistencia`,
+          body: "Closer: registrá ASISTIÓ / NO SHOW para que el funnel quede limpio.",
+          items: overdue.map((l) => {
+            const time = l.fecha ? new Date(l.fecha).toLocaleString("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit" }) : "?";
+            return {
+              text: `• *${l.nombre || l.correo || "ID " + l.id}* — cita a las ${time} (closer: ${l.closer || "_N/A_"})`,
+              actionUrl: crmUrls.lead(l.id),
+              actionLabel: "Marcar",
+            };
+          }),
+          itemsTruncatedActionUrl: crmUrls.citas(),
+          actions: [
+            { label: "Ir a Citas", url: crmUrls.citas(), emoji: "📅" },
+          ],
         });
         markSent("overdue-attendance", hash);
       }
@@ -180,14 +200,20 @@ async function runPulseCheck() {
     if (confirmations.within1h.length > 0) {
       const hash = computeHash(confirmations.within1h.map((l) => l.id));
       if (shouldSend("confirm-1h", hash)) {
-        const lines = confirmations.within1h
-          .slice(0, 10)
-          .map((l) => `• *${l.nombre || "ID " + l.id}* — setter: ${l.setter || "N/A"}`)
-          .join("\n");
         await sendSlackAlert({
           severity: "critical",
-          title: `⏰ ${confirmations.within1h.length} cita(s) en <1h SIN CONFIRMAR`,
-          body: lines,
+          title: `${confirmations.within1h.length} cita${confirmations.within1h.length === 1 ? "" : "s"} en <1h SIN confirmar`,
+          body: "Última oportunidad antes del horario. Llamá YA.",
+          emoji: "⏰",
+          items: confirmations.within1h.map((l) => ({
+            text: `• *${l.nombre || "ID " + l.id}* — setter: ${l.setter || "_N/A_"}`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Confirmar",
+          })),
+          itemsTruncatedActionUrl: crmUrls.confirmaciones(),
+          actions: [
+            { label: "Abrir Confirmaciones", url: crmUrls.confirmaciones(), emoji: "🚨", style: "danger" },
+          ],
         });
         markSent("confirm-1h", hash);
       }
@@ -196,14 +222,18 @@ async function runPulseCheck() {
     if (confirmations.within4h.length > 0) {
       const hash = computeHash(confirmations.within4h.map((l) => l.id));
       if (shouldSend("confirm-4h", hash)) {
-        const lines = confirmations.within4h
-          .slice(0, 10)
-          .map((l) => `• *${l.nombre || "ID " + l.id}* — setter: ${l.setter || "N/A"}`)
-          .join("\n");
         await sendSlackAlert({
           severity: "warning",
-          title: `${confirmations.within4h.length} cita(s) en 1-4h sin confirmar`,
-          body: lines,
+          title: `${confirmations.within4h.length} cita${confirmations.within4h.length === 1 ? "" : "s"} en 1-4h sin confirmar`,
+          items: confirmations.within4h.map((l) => ({
+            text: `• *${l.nombre || "ID " + l.id}* — setter: ${l.setter || "_N/A_"}`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Confirmar",
+          })),
+          itemsTruncatedActionUrl: crmUrls.confirmaciones(),
+          actions: [
+            { label: "Abrir Confirmaciones", url: crmUrls.confirmaciones(), emoji: "📅" },
+          ],
         });
         markSent("confirm-4h", hash);
       }
@@ -212,14 +242,18 @@ async function runPulseCheck() {
     if (confirmations.within24h.length > 0) {
       const hash = computeHash(confirmations.within24h.map((l) => l.id));
       if (shouldSend("confirm-24h", hash)) {
-        const lines = confirmations.within24h
-          .slice(0, 8)
-          .map((l) => `• *${l.nombre || "ID " + l.id}*`)
-          .join("\n");
         await sendSlackAlert({
           severity: "info",
-          title: `${confirmations.within24h.length} cita(s) próximas 24h sin confirmar`,
-          body: lines + (confirmations.within24h.length > 8 ? `\n_...y ${confirmations.within24h.length - 8} más_` : ""),
+          title: `${confirmations.within24h.length} cita${confirmations.within24h.length === 1 ? "" : "s"} próximas 24h sin confirmar`,
+          items: confirmations.within24h.map((l) => ({
+            text: `• *${l.nombre || "ID " + l.id}*`,
+            actionUrl: crmUrls.lead(l.id),
+            actionLabel: "Ver",
+          })),
+          itemsTruncatedActionUrl: crmUrls.confirmaciones(),
+          actions: [
+            { label: "Confirmaciones", url: crmUrls.confirmaciones(), emoji: "📅" },
+          ],
         });
         markSent("confirm-24h", hash);
       }
@@ -231,15 +265,20 @@ async function runPulseCheck() {
     if (fups.overdue.length > 0) {
       const hash = computeHash(fups.overdue.map((f) => f.id));
       if (shouldSend("followup-overdue", hash)) {
-        const lines = fups.overdue
-          .slice(0, 8)
-          .map((f) => `• Follow-up #${f.id} (${f.tipo}) — closer: ${f.closer || "N/A"}`)
-          .join("\n");
         const severity = fups.overdue.length >= 5 ? "critical" : "warning";
         await sendSlackAlert({
           severity,
-          title: `${fups.overdue.length} follow-up(s) vencido(s)`,
-          body: lines + (fups.overdue.length > 8 ? `\n_...y ${fups.overdue.length - 8} más_` : ""),
+          title: `${fups.overdue.length} follow-up${fups.overdue.length === 1 ? "" : "s"} vencido${fups.overdue.length === 1 ? "" : "s"}`,
+          body: "Pasaron de su próxima fecha programada y siguen activos.",
+          items: fups.overdue.map((f) => ({
+            text: `• Follow-up *#${f.id}* (${f.tipo}) — closer: ${f.closer || "_N/A_"}`,
+            actionUrl: f.leadId ? crmUrls.lead(f.leadId) : crmUrls.followUps(),
+            actionLabel: "Abrir",
+          })),
+          itemsTruncatedActionUrl: crmUrls.followUps(),
+          actions: [
+            { label: "Abrir Follow-Ups", url: crmUrls.followUps(), emoji: "🔥", style: severity === "critical" ? "danger" : undefined },
+          ],
         });
         markSent("followup-overdue", hash);
       }
@@ -248,14 +287,19 @@ async function runPulseCheck() {
     if (fups.stale.length > 0) {
       const hash = computeHash(fups.stale.map((f) => f.id));
       if (shouldSend("followup-stale", hash)) {
-        const lines = fups.stale
-          .slice(0, 8)
-          .map((f) => `• Follow-up #${f.id} (${f.tipo}) — closer: ${f.closer || "N/A"}, sin actividad >5d`)
-          .join("\n");
         await sendSlackAlert({
           severity: "warning",
-          title: `${fups.stale.length} follow-up(s) sin actividad (+5 días)`,
-          body: lines + (fups.stale.length > 8 ? `\n_...y ${fups.stale.length - 8} más_` : ""),
+          title: `${fups.stale.length} follow-up${fups.stale.length === 1 ? "" : "s"} sin actividad (+5 días)`,
+          body: "Se enfrían: registrá un toque o cerrá el follow-up.",
+          items: fups.stale.map((f) => ({
+            text: `• Follow-up *#${f.id}* (${f.tipo}) — closer: ${f.closer || "_N/A_"}`,
+            actionUrl: f.leadId ? crmUrls.lead(f.leadId) : crmUrls.followUps(),
+            actionLabel: "Abrir",
+          })),
+          itemsTruncatedActionUrl: crmUrls.followUps(),
+          actions: [
+            { label: "Abrir Follow-Ups", url: crmUrls.followUps(), emoji: "📋" },
+          ],
         });
         markSent("followup-stale", hash);
       }
@@ -264,14 +308,20 @@ async function runPulseCheck() {
     // Follow-ups de hoy: only once per day
     const today = getChileDate();
     if (fups.todayFollowUps.length > 0 && lastFollowUpHeadsUpDate !== today) {
-      const lines = fups.todayFollowUps
-        .slice(0, 8)
-        .map((f) => `• Follow-up #${f.id} (${f.tipo}) — closer: ${f.closer || "N/A"}`)
-        .join("\n");
       await sendSlackAlert({
         severity: "info",
-        title: `${fups.todayFollowUps.length} follow-up(s) programado(s) para hoy`,
-        body: lines + (fups.todayFollowUps.length > 8 ? `\n_...y ${fups.todayFollowUps.length - 8} más_` : ""),
+        title: `${fups.todayFollowUps.length} follow-up${fups.todayFollowUps.length === 1 ? "" : "s"} programado${fups.todayFollowUps.length === 1 ? "" : "s"} para hoy`,
+        body: "Heads-up del día — closers, planeen sus toques.",
+        emoji: "📅",
+        items: fups.todayFollowUps.map((f) => ({
+          text: `• Follow-up *#${f.id}* (${f.tipo}) — closer: ${f.closer || "_N/A_"}`,
+          actionUrl: f.leadId ? crmUrls.lead(f.leadId) : crmUrls.followUps(),
+          actionLabel: "Abrir",
+        })),
+        itemsTruncatedActionUrl: crmUrls.followUps(),
+        actions: [
+          { label: "Ver Follow-Ups", url: crmUrls.followUps(), emoji: "📋" },
+        ],
       });
       lastFollowUpHeadsUpDate = today;
     }
@@ -292,14 +342,17 @@ async function runSmartAlertForward() {
     const hash = critical.map((a) => a.description).sort().join("|");
     if (!shouldSend("smart-alerts", hash)) return;
 
-    const lines = critical
-      .slice(0, 8)
-      .map((a) => `• *${a.title}*: ${a.description}`)
-      .join("\n");
     await sendSlackAlert({
       severity: "critical",
-      title: `${critical.length} alerta(s) crítica(s) del sistema`,
-      body: lines,
+      title: `${critical.length} alerta${critical.length === 1 ? "" : "s"} crítica${critical.length === 1 ? "" : "s"} del sistema`,
+      body: "Smart Alerts del CRM detectó problemas que requieren atención inmediata.",
+      items: critical.map((a) => ({
+        text: `• *${a.title}*: ${a.description}`,
+      })),
+      itemsTruncatedActionUrl: crmUrls.alertas(),
+      actions: [
+        { label: "Ver Alertas", url: crmUrls.alertas(), emoji: "🚨", style: "danger" },
+      ],
     });
     markSent("smart-alerts", hash);
   } catch (err) {
