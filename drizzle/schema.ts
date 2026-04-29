@@ -1062,3 +1062,63 @@ export const prospectingDoctorReviews = pgTable("prospecting_doctor_reviews", {
 
 export type ProspectingDoctorReview = typeof prospectingDoctorReviews.$inferSelect;
 export type InsertProspectingDoctorReview = typeof prospectingDoctorReviews.$inferInsert;
+
+/**
+ * Round-Robin de asignaciones automáticas.
+ *
+ * Tres tablas relacionadas:
+ *   1. round_robin_rules     — una regla por tipo de evento (hoy: AGENDA_NUEVA).
+ *   2. round_robin_targets   — los setters y su % por regla. Σ % activos = 100.
+ *   3. round_robin_assignments — log inmutable. Es el "estado" del algoritmo:
+ *      el algoritmo de Weighted Round-Robin determinístico calcula expected vs
+ *      actual contando filas aquí. No hay un counter mutable separado.
+ *
+ * Por qué setterName es texto y no FK a teamMembers:
+ *   - leads.setterAsignado ya es texto libre. Mantenemos consistencia.
+ *   - Renombrar un setter en team_members no invalida assignments históricas.
+ *   - El admin UI muestra warning si un setterName ya no existe en team_members.
+ */
+export const roundRobinRules = pgTable("round_robin_rules", {
+  id: serial("id").primaryKey(),
+  /** Identificador del evento que dispara la regla. Hoy: "AGENDA_NUEVA". Extensible: "LEAD_HOT", etc. */
+  eventType: varchar("eventType", { length: 50 }).notNull().unique(),
+  description: varchar("description", { length: 255 }),
+  activo: integer("activo").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type RoundRobinRule = typeof roundRobinRules.$inferSelect;
+export type InsertRoundRobinRule = typeof roundRobinRules.$inferInsert;
+
+export const roundRobinTargets = pgTable("round_robin_targets", {
+  id: serial("id").primaryKey(),
+  ruleId: integer("ruleId").notNull().references(() => roundRobinRules.id, { onDelete: "cascade" }),
+  /** Match contra leads.setterAsignado y team_members.nombre. Texto libre. */
+  setterName: varchar("setterName", { length: 100 }).notNull(),
+  /** Peso 0-100. La suma de pesos activos por rule debe ser 100 (validado en backend). */
+  percentage: integer("percentage").notNull(),
+  activo: integer("activo").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  ruleIdx: index("idx_rr_targets_rule").on(table.ruleId),
+}));
+
+export type RoundRobinTarget = typeof roundRobinTargets.$inferSelect;
+export type InsertRoundRobinTarget = typeof roundRobinTargets.$inferInsert;
+
+export const roundRobinAssignments = pgTable("round_robin_assignments", {
+  id: serial("id").primaryKey(),
+  ruleId: integer("ruleId").notNull().references(() => roundRobinRules.id),
+  leadId: integer("leadId").notNull().references(() => leads.id),
+  setterName: varchar("setterName", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  ruleIdx: index("idx_rr_assignments_rule").on(table.ruleId),
+  setterIdx: index("idx_rr_assignments_setter").on(table.setterName),
+  createdAtIdx: index("idx_rr_assignments_created").on(table.createdAt),
+}));
+
+export type RoundRobinAssignment = typeof roundRobinAssignments.$inferSelect;
+export type InsertRoundRobinAssignment = typeof roundRobinAssignments.$inferInsert;

@@ -8,6 +8,7 @@ import Accesos from "../Accesos";
 import Alertas from "../Alertas";
 import WebhookInfo from "../WebhookInfo";
 import ApiDocs from "../ApiDocs";
+import RoundRobin from "./RoundRobin";
 
 const SECTION = NAV_SECTIONS.find((s) => s.basePath === "/admin")!;
 
@@ -21,6 +22,9 @@ export default function AdminSection() {
       <Switch>
         <Route path="/admin/equipo">
           <ProtectedRoute component={Equipo} path="/admin/equipo" />
+        </Route>
+        <Route path="/admin/round-robin">
+          <ProtectedRoute component={RoundRobin} path="/admin/round-robin" />
         </Route>
         <Route path="/admin/accesos">
           <ProtectedRoute component={Accesos} path="/admin/accesos" />

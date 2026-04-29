@@ -40,6 +40,7 @@ import {
   Gauge,
   ClipboardList,
   Clapperboard,
+  Shuffle,
   type LucideIcon,
 } from "lucide-react";
 import type { CrmRole } from "@shared/permissions";
@@ -155,6 +156,7 @@ export const NAV_SECTIONS: NavSection[] = [
     defaultPath: "/admin/equipo",
     subTabs: [
       { label: "Equipo", path: "/admin/equipo", icon: Users, roles: ALL_ROLES },
+      { label: "Round-Robin", path: "/admin/round-robin", icon: Shuffle, roles: ADMIN_ONLY },
       { label: "Accesos", path: "/admin/accesos", icon: Shield, roles: ADMIN_ONLY },
       { label: "Alertas", path: "/admin/alertas", icon: Bell, roles: ALL_ROLES },
       { label: "Webhook", path: "/admin/webhook", icon: Webhook, roles: ADMIN_ONLY },
@@ -198,6 +200,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   "/diagnostico": "/marketing/diagnostico",
   "/auditoria": "/marketing/auditoria",
   "/equipo": "/admin/equipo",
+  "/round-robin": "/admin/round-robin",
   "/accesos": "/admin/accesos",
   "/alertas": "/admin/alertas",
   "/webhook": "/admin/webhook",

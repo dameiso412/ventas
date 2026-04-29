@@ -3,6 +3,7 @@ import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
 import { ENV } from "./_core/env";
 import { resolveLandingSlug } from "./_core/landings";
+import { assignViaRoundRobin, notifyAgendaAssigned } from "./_core/round-robin";
 import { getSubscriberInfo, setCustomField } from "./manychat";
 import {
   verifyWebhookSignature as stripeVerifySignature,
@@ -337,6 +338,43 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
 
       await db.updateLead(existingLead.id, updateData);
 
+      // Round-robin: si el lead todavía no tiene setter (típicamente porque
+      // venía como categoria=LEAD del webhook de prospect/manychat), ahora
+      // que tiene una agenda, asignamos uno. Si ya tenía setter, NO se
+      // reasigna — el reschedule conserva el owner original.
+      let rescheduleAssignedSetter: string | null = existingLead.setterAsignado ?? null;
+      if (!existingLead.setterAsignado) {
+        try {
+          const rr = await assignViaRoundRobin("AGENDA_NUEVA", existingLead.id);
+          if (rr) {
+            rescheduleAssignedSetter = rr.setterName;
+            await db.updateLead(existingLead.id, { setterAsignado: rr.setterName });
+            console.log(`[Webhook:Lead] Round-robin (reschedule) → Lead #${existingLead.id} asignado a "${rr.setterName}"`);
+          }
+        } catch (err: any) {
+          console.error("[Webhook:Lead] Round-robin (reschedule) failed:", err.message);
+        }
+      }
+
+      // Slack notif solo si: (a) hubo asignación nueva, o (b) fue un upgrade
+      // INTRO→DEMO con setter ya asignado (ahí el equipo necesita saber que
+      // se promovió el lead). Reschedules de misma-tipo con setter ya
+      // asignado quedan silentes para no spamear el canal.
+      const isFreshAssignment = !existingLead.setterAsignado && rescheduleAssignedSetter;
+      const isIntroToDemoUpgrade = action === "converted_to_demo";
+      if (isFreshAssignment || isIntroToDemoUpgrade) {
+        notifyAgendaAssigned({
+          leadId: existingLead.id,
+          setterName: rescheduleAssignedSetter,
+          nombre: existingLead.nombre || nombre,
+          correo: existingLead.correo ?? correo,
+          telefono: existingLead.telefono ?? telefono,
+          fecha,
+          tipoCita,
+          linkCRM,
+        }).catch((e: any) => console.error("[Webhook:Lead] Slack notif (reschedule) failed:", e?.message));
+      }
+
       // Dual-write reschedule to universal profile
       await writeDataEntry(existingLead.id, "appointment", buildDataFields([
         { key: "fecha", label: "Fecha de Cita (reagendada)", value: fecha?.toISOString(), category: "appointment" },
@@ -404,6 +442,29 @@ webhookRouter.post("/api/webhook/lead", async (req: Request, res: Response) => {
       leadData.fechaIntro = fecha;
     }
     const leadId = await db.createLead(leadData);
+
+    // Round-robin assignment: nueva agenda → setterAsignado por % configurado.
+    // No-op silente si la regla está inactiva o sin targets (comportamiento legacy:
+    // setterAsignado queda null, alguien lo asigna a mano desde la UI).
+    let assignedSetter: string | null = null;
+    try {
+      const rr = await assignViaRoundRobin("AGENDA_NUEVA", leadId);
+      if (rr) {
+        assignedSetter = rr.setterName;
+        await db.updateLead(leadId, { setterAsignado: rr.setterName });
+        console.log(`[Webhook:Lead] Round-robin → Lead #${leadId} asignado a "${rr.setterName}"`);
+      }
+    } catch (err: any) {
+      // Falla silenciosa: la agenda se crea igual sin owner, no romper el webhook.
+      console.error("[Webhook:Lead] Round-robin assignment failed:", err.message);
+    }
+
+    // Slack notif al canal del equipo. Fire-and-forget — Slack caído no afecta
+    // la creación del lead.
+    notifyAgendaAssigned({
+      leadId, setterName: assignedSetter, nombre, correo, telefono,
+      fecha, tipoCita, linkCRM,
+    }).catch((e: any) => console.error("[Webhook:Lead] Slack notif failed:", e?.message));
 
     // Dual-write to universal profile
     await writeDataEntry(leadId, "appointment", buildDataFields([

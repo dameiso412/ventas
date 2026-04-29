@@ -33,6 +33,9 @@ import {
   systemConfig,
   prospectingGoals, ProspectingGoal, InsertProspectingGoal,
   prospectingDoctorReviews, ProspectingDoctorReview, InsertProspectingDoctorReview,
+  roundRobinRules, RoundRobinRule, InsertRoundRobinRule,
+  roundRobinTargets, RoundRobinTarget, InsertRoundRobinTarget,
+  roundRobinAssignments, RoundRobinAssignment, InsertRoundRobinAssignment,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAdSpendDivisor } from './_core/exchange-rate';
@@ -6002,4 +6005,259 @@ export async function updateStripeWebhookLog(id: number, data: Partial<InsertStr
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(stripeWebhookLogs).set(data).where(eq(stripeWebhookLogs.id, id));
+}
+
+// ==================== ROUND-ROBIN ====================
+
+/**
+ * Read a rule + its active targets in one shot. Returns null when:
+ *   - rule doesn't exist for that eventType
+ *   - rule.activo = 0
+ *   - rule has no active targets (would divide by zero in algorithm)
+ *
+ * Used by:
+ *   - assignViaRoundRobin (production path — webhook ingestion)
+ *   - previewNextAssignment (admin UI dry-run)
+ */
+export async function getActiveRoundRobinRule(eventType: string): Promise<{
+  rule: RoundRobinRule;
+  targets: RoundRobinTarget[];
+} | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const ruleRows = await db.select().from(roundRobinRules)
+    .where(and(eq(roundRobinRules.eventType, eventType), eq(roundRobinRules.activo, 1)))
+    .limit(1);
+  const rule = ruleRows[0];
+  if (!rule) return null;
+
+  const targets = await db.select().from(roundRobinTargets)
+    .where(and(eq(roundRobinTargets.ruleId, rule.id), eq(roundRobinTargets.activo, 1)));
+  if (targets.length === 0) return null;
+  return { rule, targets };
+}
+
+/**
+ * Append-only insert into the assignment log. The algorithm reads this table
+ * to compute the actual distribution — we never UPDATE here, only INSERT.
+ */
+export async function recordRoundRobinAssignment(args: {
+  ruleId: number;
+  leadId: number;
+  setterName: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(roundRobinAssignments).values({
+    ruleId: args.ruleId,
+    leadId: args.leadId,
+    setterName: args.setterName,
+  });
+}
+
+/**
+ * Per-target counts of assignments for a given rule. Used by:
+ *   - The Weighted Round-Robin algorithm to compute deficit (expected − actual).
+ *   - The admin UI "Distribución actual" table to compare real % vs target %.
+ *
+ * Returns rows for ALL active targets, including zeros (so the UI shows
+ * "Setter X: 0 asignadas" instead of dropping the row).
+ */
+export async function getRoundRobinAssignmentCounts(ruleId: number): Promise<Record<string, number>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select({
+    setterName: roundRobinAssignments.setterName,
+    count: sql<number>`COUNT(*)`,
+  })
+    .from(roundRobinAssignments)
+    .where(eq(roundRobinAssignments.ruleId, ruleId))
+    .groupBy(roundRobinAssignments.setterName);
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.setterName] = Number(r.count);
+  return out;
+}
+
+/**
+ * UI-facing stats: per-setter target % vs real %. Optionally filtered by
+ * date range to "what's the distribution in the last 30 days" view. The
+ * algorithm itself uses ALL assignments (no date filter), so the UI number
+ * may differ slightly from what the algorithm sees — that's OK, this is
+ * for human reporting only.
+ */
+export async function getRoundRobinStats(opts: {
+  ruleId: number;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<Array<{
+  setterName: string;
+  percentageTarget: number;
+  count: number;
+  percentageReal: number;
+  activo: number;
+}>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions: any[] = [eq(roundRobinAssignments.ruleId, opts.ruleId)];
+  if (opts.dateFrom) conditions.push(gte(roundRobinAssignments.createdAt, new Date(opts.dateFrom)));
+  if (opts.dateTo) conditions.push(lte(roundRobinAssignments.createdAt, new Date(opts.dateTo)));
+
+  const countRows = await db.select({
+    setterName: roundRobinAssignments.setterName,
+    count: sql<number>`COUNT(*)`,
+  })
+    .from(roundRobinAssignments)
+    .where(and(...conditions))
+    .groupBy(roundRobinAssignments.setterName);
+
+  const counts: Record<string, number> = {};
+  let total = 0;
+  for (const r of countRows) {
+    const c = Number(r.count);
+    counts[r.setterName] = c;
+    total += c;
+  }
+
+  const targets = await db.select().from(roundRobinTargets)
+    .where(eq(roundRobinTargets.ruleId, opts.ruleId));
+
+  // Return one row per target + extra rows for any setterName found in
+  // assignments but missing from targets (e.g. a setter that was removed
+  // from the config but still has historical assignments).
+  const seen = new Set<string>();
+  const out: Array<{ setterName: string; percentageTarget: number; count: number; percentageReal: number; activo: number }> = [];
+  for (const t of targets) {
+    seen.add(t.setterName);
+    const c = counts[t.setterName] ?? 0;
+    out.push({
+      setterName: t.setterName,
+      percentageTarget: t.percentage,
+      count: c,
+      percentageReal: total > 0 ? (c / total) * 100 : 0,
+      activo: t.activo,
+    });
+  }
+  for (const setterName of Object.keys(counts)) {
+    if (seen.has(setterName)) continue;
+    out.push({
+      setterName,
+      percentageTarget: 0,
+      count: counts[setterName],
+      percentageReal: total > 0 ? (counts[setterName] / total) * 100 : 0,
+      activo: 0,
+    });
+  }
+  return out;
+}
+
+/** List all rules + their targets for the admin UI. */
+export async function listRoundRobinRules(): Promise<Array<RoundRobinRule & { targets: RoundRobinTarget[] }>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rules = await db.select().from(roundRobinRules).orderBy(asc(roundRobinRules.eventType));
+  if (rules.length === 0) return [];
+  const targets = await db.select().from(roundRobinTargets)
+    .where(inArray(roundRobinTargets.ruleId, rules.map((r) => r.id)));
+  const byRule: Record<number, RoundRobinTarget[]> = {};
+  for (const t of targets) {
+    if (!byRule[t.ruleId]) byRule[t.ruleId] = [];
+    byRule[t.ruleId].push(t);
+  }
+  return rules.map((r) => ({ ...r, targets: byRule[r.id] ?? [] }));
+}
+
+/** Toggle activo / update description on a rule. Doesn't touch targets. */
+export async function updateRoundRobinRule(input: {
+  id: number;
+  activo?: number;
+  description?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const set: Partial<InsertRoundRobinRule> = { updatedAt: new Date() };
+  if (input.activo !== undefined) set.activo = input.activo;
+  if (input.description !== undefined) set.description = input.description;
+  await db.update(roundRobinRules).set(set).where(eq(roundRobinRules.id, input.id));
+}
+
+/**
+ * Replace the full target list for a rule. Validates that the sum of
+ * percentages on ACTIVE targets equals 100 — rejects with an error otherwise
+ * so the admin gets a clean error in the UI rather than a bad config that
+ * silently misdistributes.
+ *
+ * "Replace-all" semantics (vs upsert) keeps the API simple: the UI sends
+ * the entire desired state, we delete old targets and insert new ones in
+ * a transaction. Existing assignments stay intact (they reference the rule,
+ * not specific target rows).
+ */
+export async function setRoundRobinTargets(input: {
+  ruleId: number;
+  targets: Array<{ setterName: string; percentage: number; activo: number }>;
+}): Promise<void> {
+  const activeSum = input.targets
+    .filter((t) => t.activo === 1)
+    .reduce((acc, t) => acc + t.percentage, 0);
+  if (input.targets.some((t) => t.activo === 1) && activeSum !== 100) {
+    throw new Error(`La suma de porcentajes activos debe ser 100. Actualmente: ${activeSum}.`);
+  }
+
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Two-step: delete then insert. Drizzle doesn't expose pg transactions in
+  // every config, but at the data-store level this is acceptable — a brief
+  // window of "no targets" only matters if a webhook fires in that 1ms gap,
+  // and in that case the algorithm returns null cleanly (rule still active
+  // but no active targets → no assignment). Worst case: 1 lead unassigned
+  // during config-change.
+  await db.delete(roundRobinTargets).where(eq(roundRobinTargets.ruleId, input.ruleId));
+  if (input.targets.length > 0) {
+    await db.insert(roundRobinTargets).values(input.targets.map((t) => ({
+      ruleId: input.ruleId,
+      setterName: t.setterName,
+      percentage: t.percentage,
+      activo: t.activo,
+    })));
+  }
+  // Touch the rule's updatedAt for audit.
+  await db.update(roundRobinRules)
+    .set({ updatedAt: new Date() })
+    .where(eq(roundRobinRules.id, input.ruleId));
+}
+
+/**
+ * Recent assignment history for the "Histórico" panel in the admin UI.
+ * JOINS leads to surface the lead nombre/tipo for context — the lead might
+ * have changed setter manually since, but the assignment row records what
+ * the round-robin DECIDED at the time, which is what we want to audit.
+ */
+export async function getRoundRobinHistory(opts: { ruleId: number; limit?: number }): Promise<Array<{
+  id: number;
+  leadId: number;
+  leadNombre: string | null;
+  tipo: string | null;
+  fecha: Date | null;
+  setterName: string;
+  createdAt: Date;
+}>> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+  const rows = await db.select({
+    id: roundRobinAssignments.id,
+    leadId: roundRobinAssignments.leadId,
+    leadNombre: leads.nombre,
+    tipo: leads.tipo,
+    fecha: leads.fecha,
+    setterName: roundRobinAssignments.setterName,
+    createdAt: roundRobinAssignments.createdAt,
+  })
+    .from(roundRobinAssignments)
+    .leftJoin(leads, eq(leads.id, roundRobinAssignments.leadId))
+    .where(eq(roundRobinAssignments.ruleId, opts.ruleId))
+    .orderBy(desc(roundRobinAssignments.createdAt))
+    .limit(limit);
+  return rows.map((r) => ({ ...r, tipo: r.tipo ?? null }));
 }

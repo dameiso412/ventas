@@ -1607,6 +1607,68 @@ export const appRouter = router({
       .mutation(({ input }) => db.deleteTeamMember(input.id)),
   }),
 
+  // ==================== ROUND ROBIN ====================
+  /**
+   * Configuración admin del Weighted Round-Robin de agendas.
+   * Algoritmo + helpers en server/_core/round-robin.ts.
+   */
+  roundRobin: router({
+    /** Lista todas las reglas + sus targets para el editor admin. */
+    listRules: adminProcedure.query(() => db.listRoundRobinRules()),
+
+    /** Stats por regla — distribución real vs target. */
+    stats: adminProcedure
+      .input(z.object({
+        ruleId: z.number(),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+      }))
+      .query(({ input }) => db.getRoundRobinStats(input)),
+
+    /** Histórico de assignments para auditoría (últimos N). */
+    history: adminProcedure
+      .input(z.object({ ruleId: z.number(), limit: z.number().min(1).max(200).default(50) }))
+      .query(({ input }) => db.getRoundRobinHistory(input)),
+
+    /**
+     * Toggle activo / cambiar description. NO toca targets — para eso usar
+     * setTargets (separación intencional para UI más simple).
+     */
+    updateRule: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        activo: z.number().min(0).max(1).optional(),
+        description: z.string().max(255).optional(),
+      }))
+      .mutation(({ input }) => db.updateRoundRobinRule(input)),
+
+    /**
+     * Replace-all de la lista de targets para una regla. Backend valida
+     * Σ activos = 100; si no, throw → toast de error en la UI.
+     */
+    setTargets: adminProcedure
+      .input(z.object({
+        ruleId: z.number(),
+        targets: z.array(z.object({
+          setterName: z.string().min(1).max(100),
+          percentage: z.number().min(0).max(100),
+          activo: z.number().min(0).max(1),
+        })),
+      }))
+      .mutation(({ input }) => db.setRoundRobinTargets(input)),
+
+    /**
+     * Preview "si llegara una agenda ahora, le tocaría a quién" — no escribe.
+     * Útil en la UI para mostrar al admin el siguiente en la cola.
+     */
+    preview: adminProcedure
+      .input(z.object({ eventType: z.string().default("AGENDA_NUEVA") }))
+      .query(async ({ input }) => {
+        const { previewNextAssignment } = await import("./_core/round-robin");
+        return previewNextAssignment(input.eventType);
+      }),
+  }),
+
   // ==================== STRIPE ====================
   stripe: router({
     /** Quick health check — exposes whether keys are configured and connection works. */
