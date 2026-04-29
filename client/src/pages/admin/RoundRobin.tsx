@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Users, AlertTriangle, ListChecks } from "lucide-react";
+import { Plus, Trash2, Users, AlertTriangle, ListChecks, Send } from "lucide-react";
 
 const EVENT_TYPE = "AGENDA_NUEVA";
 
@@ -83,6 +83,23 @@ export default function RoundRobin() {
       utils.roundRobin.listRules.invalidate();
       utils.roundRobin.stats.invalidate();
       utils.roundRobin.preview.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Test Slack: verifica que SLACK_WEBHOOK_URL está bien configurado en el
+  // server enviando un mensaje real al canal. Útil para diagnosticar cuando
+  // las agendas no aparecen en Slack — separa "agenda no disparó notif" de
+  // "Slack no está configurado".
+  const testSlackMutation = trpc.roundRobin.testSlack.useMutation({
+    onSuccess: (data) => {
+      if (!data.configured) {
+        toast.error(data.error ?? "Slack no configurado");
+      } else if (data.sent) {
+        toast.success("Mensaje enviado — revisá tu canal de Slack");
+      } else {
+        toast.error(data.error ?? "Slack rechazó el mensaje");
+      }
     },
     onError: (e) => toast.error(e.message),
   });
@@ -164,13 +181,22 @@ export default function RoundRobin() {
             )}
           </CardTitle>
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => testSlackMutation.mutate()}
+              disabled={testSlackMutation.isPending}
+            >
+              <Send className="h-3.5 w-3.5 mr-1.5" />
+              {testSlackMutation.isPending ? "Enviando..." : "Test Slack"}
+            </Button>
             <span className="text-xs text-muted-foreground">{isActive ? "Asignando" : "Pausado"}</span>
             <Switch checked={isActive} onCheckedChange={handleToggleRule} />
           </div>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           {isActive
-            ? "Cada agenda nueva (DEMO/INTRO) que entra al CRM via webhook se asigna a un setter según los % configurados."
+            ? "Cada agenda nueva (DEMO/INTRO) — sea por webhook GHL o creada desde la UI — se asigna a un setter según los % configurados y notifica al canal Slack."
             : "Las agendas se crean sin setter asignado (legacy). Activá para empezar a distribuir automáticamente."}
         </CardContent>
       </Card>

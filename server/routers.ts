@@ -8,7 +8,8 @@ import { createApiKey, listApiKeys, revokeApiKey, deleteApiKey } from "./api-v1"
 import * as metaAds from "./meta-ads";
 import { reanalyzeTranscript } from "./_core/transcription";
 import { performFullSync } from "./cron-meta-sync";
-import { sendSlackAlert } from "./_core/slack";
+import { sendSlackAlert, isSlackConfigured } from "./_core/slack";
+import { assignViaRoundRobin, notifyAgendaAssigned } from "./_core/round-robin";
 import {
   COST_BENCHMARKS, RATE_BENCHMARKS, evaluateMetric,
   CONSTRAINT_SCENARIOS, HEALTH_COLORS,
@@ -73,6 +74,41 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const id = await db.createLead(input as any);
+
+        // Round-robin + Slack para agendas creadas desde la UI (no solo via
+        // webhook). Mismo comportamiento que el path GHL — si vino con
+        // setterAsignado explícito, NO se sobrescribe; si vino vacío y la
+        // regla está activa, el algoritmo asigna automáticamente.
+        if (input.categoria === "AGENDA") {
+          let setter = input.setterAsignado ?? null;
+          if (!setter) {
+            try {
+              const rr = await assignViaRoundRobin("AGENDA_NUEVA", id);
+              if (rr) {
+                setter = rr.setterName;
+                await db.updateLead(id, { setterAsignado: rr.setterName });
+              }
+            } catch (err: any) {
+              console.error("[leads.create] Round-robin failed:", err.message);
+            }
+          }
+          // Notif al canal Slack — fire-and-forget. Útil incluso cuando el
+          // setter vino seteado a mano (el equipo se entera igual de la cita
+          // nueva sin abrir el CRM).
+          if (input.tipo === "DEMO" || input.tipo === "INTRO") {
+            notifyAgendaAssigned({
+              leadId: id,
+              setterName: setter,
+              nombre: input.nombre ?? "",
+              correo: input.correo ?? null,
+              telefono: input.telefono ?? null,
+              fecha: input.fecha ?? new Date(),
+              tipoCita: input.tipo,
+              linkCRM: null,
+            }).catch((e: any) => console.error("[leads.create] Slack notif failed:", e?.message));
+          }
+        }
+
         return { id };
       }),
 
@@ -1667,6 +1703,38 @@ export const appRouter = router({
         const { previewNextAssignment } = await import("./_core/round-robin");
         return previewNextAssignment(input.eventType);
       }),
+
+    /**
+     * Health check de Slack. Verifica:
+     *   - Si SLACK_WEBHOOK_URL está configurado en el env del server.
+     *   - Si Slack acepta el POST (status 200).
+     * Manda un mensaje real al canal con título "Test desde CRM" — el admin
+     * lo ve en Slack y confirma que el config funciona end-to-end. Devuelve
+     * { configured, sent, error? } para que la UI muestre feedback claro.
+     */
+    testSlack: adminProcedure.mutation(async () => {
+      if (!isSlackConfigured()) {
+        return {
+          configured: false,
+          sent: false,
+          error: "SLACK_WEBHOOK_URL no está configurado en el server. Revisá las env vars del deploy.",
+        };
+      }
+      try {
+        const sent = await sendSlackAlert({
+          severity: "info",
+          title: "✅ Test desde CRM",
+          body: "Si ves este mensaje, la integración Slack funciona. Las notificaciones de round-robin van a llegar acá.",
+          fields: [
+            { label: "Origen", value: "/admin/round-robin · botón Test Slack" },
+            { label: "Hora", value: new Date().toLocaleString("es-CL", { timeZone: "America/Santiago" }) },
+          ],
+        });
+        return { configured: true, sent, error: sent ? undefined : "Slack rechazó el POST. Revisá los logs del server." };
+      } catch (err: any) {
+        return { configured: true, sent: false, error: err?.message ?? "Error desconocido" };
+      }
+    }),
   }),
 
   // ==================== STRIPE ====================
