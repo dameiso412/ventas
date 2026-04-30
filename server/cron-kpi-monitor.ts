@@ -31,27 +31,58 @@ let lastTeamDigestDate: string | null = null;
 let lastWeeklyDiagDate: string | null = null;
 let lastFollowUpHeadsUpDate: string | null = null;
 
-// ─── Content-Hash Dedup (Phase 1: anti-spam) ────────────────
-// Only re-alerts when the actual data changes — no more TTL-based repetition
+// ─── Content-Hash Dedup + Time-Based Throttle (anti-spam v2) ────────────────
+//
+// El dedup original era solo por content-hash — basta que UN lead entre/salga
+// del set para que el hash cambie y la alerta refire en el próximo pulse
+// (cada 15 min). Eso producía spam: backlog de 57 leads sin contactar →
+// 50/49/48/47 → 4 alertas en 1 hora.
+//
+// Anti-spam v2 agrega un `minIntervalMs` por alerta:
+//   - Si el content NO cambió, no refire (igual que antes).
+//   - Si el content CAMBIÓ pero `minIntervalMs` no pasó desde el último envío,
+//     suprime — la siguiente notificación sale cuando se cumpla el intervalo.
+//   - Si el content cambió Y pasó el intervalo, fire.
+//
+// Política por severidad:
+//   critical → 1h     (speed-to-lead, confirm-1h, smart-alerts)
+//   warning  → 6h     (unassigned, overdue-attendance, confirm-4h, followups)
+//   info     → 24h    (confirm-24h, followups-hoy: 1 vez al día max)
+//
+// Algunos warnings tienen MIN_COUNT — skip cuando count < threshold porque
+// 1-2 casos aislados no justifican notif al canal.
 const dedup = new Map<string, { sentAt: number; contentHash: string }>();
+
+const THROTTLE = {
+  CRITICAL_MS: 1 * 60 * 60 * 1000,   // 1h
+  WARNING_MS: 6 * 60 * 60 * 1000,    // 6h
+  INFO_MS: 24 * 60 * 60 * 1000,      // 24h
+};
 
 function computeHash(ids: number[]): string {
   return ids.sort((a, b) => a - b).join(",");
 }
 
-function shouldSend(key: string, contentHash: string): boolean {
+/**
+ * @param minIntervalMs Mínimo tiempo entre re-envíos de la misma key (incluso
+ *                      si el contenido cambió). Default 0 = sin throttle.
+ */
+function shouldSend(key: string, contentHash: string, minIntervalMs = 0): boolean {
   const prev = dedup.get(key);
   if (!prev) return true;
-  return prev.contentHash !== contentHash;
+  if (prev.contentHash === contentHash) return false;
+  if (minIntervalMs > 0 && Date.now() - prev.sentAt < minIntervalMs) return false;
+  return true;
 }
 
 function markSent(key: string, contentHash: string): void {
   dedup.set(key, { sentAt: Date.now(), contentHash });
 }
 
-/** Purge entries older than 24h to prevent unbounded growth */
+/** Purge entries older than 48h (was 24h — necesitamos preservar el sentAt
+ *  para que el throttling de 24h funcione correctamente). */
 function cleanupDedup() {
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - 48 * 60 * 60 * 1000;
   const keys = Array.from(dedup.keys());
   for (const key of keys) {
     const val = dedup.get(key);
@@ -100,10 +131,13 @@ function getCurrentMes(): string {
 async function runPulseCheck() {
   try {
     // 1. Speed to Lead — leads >30 min sin contactar
+    // Critical pero throttled a 1h: el backlog cambia constantemente (57→55→52)
+    // y un alert por cada delta sería spam. 1h le da tiempo al equipo a
+    // procesar antes del siguiente recordatorio.
     const stl = await db.getSpeedToLeadAlerts(30);
-    if (stl.length > 0) {
+    if (stl.length >= 3) {
       const hash = computeHash(stl.map((l) => l.id));
-      if (shouldSend("speed-to-lead", hash)) {
+      if (shouldSend("speed-to-lead", hash, THROTTLE.CRITICAL_MS)) {
         await sendSlackAlert({
           severity: "critical",
           title: `${stl.length} lead${stl.length === 1 ? "" : "s"} sin contactar hace +30 min`,
@@ -123,11 +157,12 @@ async function runPulseCheck() {
       }
     }
 
-    // 2. Leads sin setter asignado
+    // 2. Leads sin setter asignado — warning, throttled 6h.
+    // Skip si <3 (1-2 casos no justifican alert al canal).
     const unassigned = await db.getUnassignedLeads();
-    if (unassigned.length > 0) {
+    if (unassigned.length >= 3) {
       const hash = computeHash(unassigned.map((l) => l.id));
-      if (shouldSend("unassigned", hash)) {
+      if (shouldSend("unassigned", hash, THROTTLE.WARNING_MS)) {
         await sendSlackAlert({
           severity: "warning",
           title: `${unassigned.length} lead${unassigned.length === 1 ? "" : "s"} sin setter asignado`,
@@ -148,11 +183,12 @@ async function runPulseCheck() {
       }
     }
 
-    // 3. Seguimientos estancados (>72h sin update)
+    // 3. Seguimientos estancados (>72h sin update) — warning, throttled 6h.
+    // Skip si <3 (lista corta es trivial de revisar manualmente).
     const stale = await db.getStaleSeguimientos(72);
-    if (stale.length > 0) {
+    if (stale.length >= 3) {
       const hash = computeHash(stale.map((l) => l.id));
-      if (shouldSend("stale-seguimiento", hash)) {
+      if (shouldSend("stale-seguimiento", hash, THROTTLE.WARNING_MS)) {
         await sendSlackAlert({
           severity: "warning",
           title: `${stale.length} seguimiento${stale.length === 1 ? "" : "s"} estancado${stale.length === 1 ? "" : "s"} (+72h)`,
@@ -168,11 +204,11 @@ async function runPulseCheck() {
       }
     }
 
-    // 4. Citas vencidas sin registrar asistencia
+    // 4. Citas vencidas sin registrar asistencia — warning, throttled 6h.
     const overdue = await db.getOverdueAppointments();
-    if (overdue.length > 0) {
+    if (overdue.length >= 2) {
       const hash = computeHash(overdue.map((l) => l.id));
-      if (shouldSend("overdue-attendance", hash)) {
+      if (shouldSend("overdue-attendance", hash, THROTTLE.WARNING_MS)) {
         await sendSlackAlert({
           severity: "warning",
           title: `${overdue.length} cita${overdue.length === 1 ? "" : "s"} sin registrar asistencia`,
@@ -198,8 +234,9 @@ async function runPulseCheck() {
     const confirmations = await db.getEscalatedConfirmations();
 
     if (confirmations.within1h.length > 0) {
+      // Critical pero throttled a 1h: si en 1h sigue sin confirmar, refire.
       const hash = computeHash(confirmations.within1h.map((l) => l.id));
-      if (shouldSend("confirm-1h", hash)) {
+      if (shouldSend("confirm-1h", hash, THROTTLE.CRITICAL_MS)) {
         await sendSlackAlert({
           severity: "critical",
           title: `${confirmations.within1h.length} cita${confirmations.within1h.length === 1 ? "" : "s"} en <1h SIN confirmar`,
@@ -219,9 +256,11 @@ async function runPulseCheck() {
       }
     }
 
-    if (confirmations.within4h.length > 0) {
+    if (confirmations.within4h.length >= 2) {
+      // Warning, throttled 6h. <2 casos no spamea — el confirm-1h cubrirá
+      // cuando se acerque la cita.
       const hash = computeHash(confirmations.within4h.map((l) => l.id));
-      if (shouldSend("confirm-4h", hash)) {
+      if (shouldSend("confirm-4h", hash, THROTTLE.WARNING_MS)) {
         await sendSlackAlert({
           severity: "warning",
           title: `${confirmations.within4h.length} cita${confirmations.within4h.length === 1 ? "" : "s"} en 1-4h sin confirmar`,
@@ -239,9 +278,10 @@ async function runPulseCheck() {
       }
     }
 
-    if (confirmations.within24h.length > 0) {
+    if (confirmations.within24h.length >= 3) {
+      // Info — heads-up del día siguiente. Throttled 24h: 1 alert por día max.
       const hash = computeHash(confirmations.within24h.map((l) => l.id));
-      if (shouldSend("confirm-24h", hash)) {
+      if (shouldSend("confirm-24h", hash, THROTTLE.INFO_MS)) {
         await sendSlackAlert({
           severity: "info",
           title: `${confirmations.within24h.length} cita${confirmations.within24h.length === 1 ? "" : "s"} próximas 24h sin confirmar`,
@@ -262,10 +302,14 @@ async function runPulseCheck() {
     // 6. Follow-up tracking (overdue + stale + today's heads-up)
     const fups = await db.getStaleFollowUps(5);
 
-    if (fups.overdue.length > 0) {
+    if (fups.overdue.length >= 2) {
+      // Severity escala con cantidad. Throttle según severity:
+      //   <5 → warning, 6h
+      //   >=5 → critical, 1h (problema sistémico)
       const hash = computeHash(fups.overdue.map((f) => f.id));
-      if (shouldSend("followup-overdue", hash)) {
-        const severity = fups.overdue.length >= 5 ? "critical" : "warning";
+      const severity = fups.overdue.length >= 5 ? "critical" : "warning";
+      const minInterval = severity === "critical" ? THROTTLE.CRITICAL_MS : THROTTLE.WARNING_MS;
+      if (shouldSend("followup-overdue", hash, minInterval)) {
         await sendSlackAlert({
           severity,
           title: `${fups.overdue.length} follow-up${fups.overdue.length === 1 ? "" : "s"} vencido${fups.overdue.length === 1 ? "" : "s"}`,
@@ -284,9 +328,10 @@ async function runPulseCheck() {
       }
     }
 
-    if (fups.stale.length > 0) {
+    if (fups.stale.length >= 3) {
+      // Warning, throttled 6h. Skip <3 (lista corta es trivial).
       const hash = computeHash(fups.stale.map((f) => f.id));
-      if (shouldSend("followup-stale", hash)) {
+      if (shouldSend("followup-stale", hash, THROTTLE.WARNING_MS)) {
         await sendSlackAlert({
           severity: "warning",
           title: `${fups.stale.length} follow-up${fups.stale.length === 1 ? "" : "s"} sin actividad (+5 días)`,
@@ -340,7 +385,9 @@ async function runSmartAlertForward() {
     if (critical.length === 0) return;
 
     const hash = critical.map((a) => a.description).sort().join("|");
-    if (!shouldSend("smart-alerts", hash)) return;
+    // Smart alerts críticas — throttled a 1h para evitar spam si el sistema
+    // detecta el mismo problema recurrente.
+    if (!shouldSend("smart-alerts", hash, THROTTLE.CRITICAL_MS)) return;
 
     await sendSlackAlert({
       severity: "critical",
