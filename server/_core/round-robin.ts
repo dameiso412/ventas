@@ -158,15 +158,20 @@ export async function notifyAgendaAssigned(args: {
   if (args.correo) fields.push({ label: "✉️ Correo", value: args.correo });
   if (args.telefono) fields.push({ label: "📱 Teléfono", value: args.telefono });
 
-  // Action buttons: GHL link first (where the conversation lives) when
-  // available, then deep link to the lead in our CRM.
-  const actions: Array<{ label: string; url: string; emoji?: string; style?: "primary" | "danger" }> = [
-    { label: "Abrir en CRM", url: crmUrls.lead(args.leadId), emoji: "🔗", style: "primary" },
+  // Action buttons. Mix de:
+  //   - Interactive: actúan sobre el CRM en 1 click (requieren Slack App).
+  //   - Link: abren el CRM en otra pestaña (fallback siempre disponible).
+  //
+  // Interactive buttons traen `actionId` con formato "accion:leadId" — el
+  // handler en /api/slack/interactive parsea y dispatcha.
+  const actions: Array<{ label: string; url?: string; actionId?: string; emoji?: string; style?: "primary" | "danger" }> = [
+    { label: "Marcar contactado", actionId: `lead_contactado:${args.leadId}`, emoji: "✅", style: "primary" },
+    { label: "Asignarme", actionId: `lead_asignar:${args.leadId}`, emoji: "👤" },
+    { label: "Abrir en CRM", url: crmUrls.lead(args.leadId), emoji: "🔗" },
   ];
   if (args.linkCRM) {
     actions.push({ label: "Abrir en GHL", url: args.linkCRM, emoji: "📞" });
   }
-  actions.push({ label: "Round-Robin", url: crmUrls.roundRobin(), emoji: "🔀" });
 
   await sendSlackAlert({
     severity: args.setterName ? "success" : "warning",
@@ -236,16 +241,16 @@ export async function notifyNewLead(args: {
     fields.push({ label: "👤 Setter", value: `*${args.setterAsignado}*` });
   }
 
-  // Action buttons. "Abrir lead" siempre primero (acción más probable).
-  // "Cola de trabajo" cuando no hay setter asignado — dirige al equipo a
-  // tomar el lead. "Round-Robin" como último para que el admin pueda
-  // configurar reglas si nota que los leads quedan huérfanos.
-  const actions: Array<{ label: string; url: string; emoji?: string; style?: "primary" | "danger" }> = [
-    { label: "Abrir lead", url: crmUrls.lead(args.leadId), emoji: "🔗", style: "primary" },
+  // Action buttons. Interactive primero (1-click sobre CRM), link como
+  // escape al CRM. "Asignarme" solo cuando el lead aún no tiene setter,
+  // para no pisar asignaciones manuales sin querer.
+  const actions: Array<{ label: string; url?: string; actionId?: string; emoji?: string; style?: "primary" | "danger" }> = [
+    { label: "Marcar contactado", actionId: `lead_contactado:${args.leadId}`, emoji: "✅", style: "primary" },
   ];
   if (!args.setterAsignado) {
-    actions.push({ label: "Cola de trabajo", url: crmUrls.colaTrabajo(), emoji: "📋" });
+    actions.push({ label: "Asignarme", actionId: `lead_asignar:${args.leadId}`, emoji: "👤" });
   }
+  actions.push({ label: "Abrir lead", url: crmUrls.lead(args.leadId), emoji: "🔗" });
 
   // Body line: deja claro de un vistazo qué tipo de lead es y de dónde vino.
   const bodyParts: string[] = [];

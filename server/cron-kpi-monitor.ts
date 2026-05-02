@@ -75,6 +75,24 @@ function shouldSend(key: string, contentHash: string, minIntervalMs = 0): boolea
   return true;
 }
 
+/**
+ * Async snooze check — el setter clickea "🔇 Snooze 1h" en Slack y se
+ * inserta una fila en `slack_alert_snoozes` con `expiresAt = NOW + 1h`.
+ * El cron consulta acá antes de mandar y suprime durante la ventana.
+ *
+ * Falla silente si la DB no responde — preferimos mandar el alert que
+ * silenciar por error.
+ */
+async function isSnoozedAsync(alertKey: string): Promise<boolean> {
+  try {
+    const snooze = await db.getActiveSnooze(alertKey);
+    return !!snooze;
+  } catch (err) {
+    console.error(`[KPI Monitor] Snooze check failed for "${alertKey}":`, err);
+    return false;
+  }
+}
+
 function markSent(key: string, contentHash: string): void {
   dedup.set(key, { sentAt: Date.now(), contentHash });
 }
@@ -135,7 +153,7 @@ async function runPulseCheck() {
     // y un alert por cada delta sería spam. 1h le da tiempo al equipo a
     // procesar antes del siguiente recordatorio.
     const stl = await db.getSpeedToLeadAlerts(30);
-    if (stl.length >= 3) {
+    if (stl.length >= 3 && !(await isSnoozedAsync("speed-to-lead"))) {
       const hash = computeHash(stl.map((l) => l.id));
       if (shouldSend("speed-to-lead", hash, THROTTLE.CRITICAL_MS)) {
         await sendSlackAlert({
@@ -151,6 +169,7 @@ async function runPulseCheck() {
           itemsTruncatedActionLabel: "Ver cola completa",
           actions: [
             { label: "Abrir cola de trabajo", url: crmUrls.colaTrabajo(), emoji: "📋", style: "primary" },
+            { label: "Snooze 1h", actionId: "snooze:speed-to-lead:60", emoji: "🔇" },
           ],
         });
         markSent("speed-to-lead", hash);

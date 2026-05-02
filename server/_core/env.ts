@@ -9,6 +9,14 @@ export const ENV = {
   fbAccessToken: process.env.FB_ACCESS_TOKEN ?? "",
   metaAdAccountId: process.env.META_AD_ACCOUNT_ID ?? "act_1347234229107497",
   slackWebhookUrl: process.env.SLACK_WEBHOOK_URL ?? "",
+  /** Slack Bot Token (xoxb-...) for interactive buttons. Required for
+   *  message updates after a button click. Without it, link buttons still
+   *  work but action buttons are hidden. See docs/slack-app-setup.md. */
+  slackBotToken: process.env.SLACK_BOT_TOKEN ?? "",
+  /** Slack Signing Secret used to verify HMAC of incoming Interactivity
+   *  POSTs to /api/slack/interactive. Without it the endpoint rejects
+   *  every request. See docs/slack-app-setup.md. */
+  slackSigningSecret: process.env.SLACK_SIGNING_SECRET ?? "",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   manychatApiToken: process.env.MANYCHAT_API_TOKEN ?? "",
   manychatCrmFieldId: process.env.MANYCHAT_CRM_FIELD_ID ?? "",

@@ -1273,7 +1273,8 @@ export const appRouter = router({
               { label: "🔥 Follow-up", value: `RED_HOT #${followUpId}` },
             ],
             actions: [
-              { label: "Abrir lead", url: crmUrls.lead(input.leadId), emoji: "🔗", style: "primary" },
+              { label: "Marcar contactado", actionId: `lead_contactado:${input.leadId}`, emoji: "✅", style: "primary" },
+              { label: "Abrir lead", url: crmUrls.lead(input.leadId), emoji: "🔗" },
               { label: "Ver Follow-Ups", url: crmUrls.followUps(), emoji: "📋" },
             ],
           });
@@ -1729,6 +1730,30 @@ export const appRouter = router({
         const { previewNextAssignment } = await import("./_core/round-robin");
         return previewNextAssignment(input.eventType);
       }),
+
+    /**
+     * Lista snoozes activos (expiresAt > NOW). Cada uno incluye quién lo
+     * disparó desde Slack. Usado por /admin/alertas para mostrar la lista
+     * con botón "Reactivar".
+     */
+    listActiveSnoozes: adminProcedure.query(() => db.listActiveSnoozes()),
+
+    /**
+     * Force-expire un snooze. La próxima ejecución del cron volverá a
+     * mandar el alert si el contenido cambió.
+     */
+    expireSnooze: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input }) => db.expireSnooze(input.id)),
+
+    /**
+     * Lista las últimas N acciones de Slack para auditoría. Útil para
+     * debug ("¿por qué no se marcó?") y para reportes ("Damaso usó Slack
+     * 58 veces este mes para acción rápida").
+     */
+    recentSlackActions: adminProcedure
+      .input(z.object({ limit: z.number().min(1).max(200).default(50) }).optional())
+      .query(({ input }) => db.listRecentSlackActions(input?.limit)),
 
     /**
      * Health check de Slack. Verifica:

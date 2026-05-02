@@ -36,6 +36,8 @@ import {
   roundRobinRules, RoundRobinRule, InsertRoundRobinRule,
   roundRobinTargets, RoundRobinTarget, InsertRoundRobinTarget,
   roundRobinAssignments, RoundRobinAssignment, InsertRoundRobinAssignment,
+  slackAlertSnoozes, SlackAlertSnooze, InsertSlackAlertSnooze,
+  slackActionsLog, SlackActionLog, InsertSlackActionLog,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { getAdSpendDivisor } from './_core/exchange-rate';
@@ -6260,4 +6262,114 @@ export async function getRoundRobinHistory(opts: { ruleId: number; limit?: numbe
     .orderBy(desc(roundRobinAssignments.createdAt))
     .limit(limit);
   return rows.map((r) => ({ ...r, tipo: r.tipo ?? null }));
+}
+
+// ==================== SLACK INTERACTIVITY ====================
+//
+// Helpers para `server/slack-interactive.ts` (handler del endpoint
+// /api/slack/interactive). Tres concerns:
+//   1. Mapear Slack user → team_member del CRM (por correo).
+//   2. Idempotencia para "marcar contactado" (no duplicar contact_attempts).
+//   3. Snoozes y audit log.
+
+/**
+ * Resolve a CRM team member by email. Used when a Slack user clicks an
+ * action button — we look up their email from Slack profile and match
+ * against `team_members.correo`. Case-insensitive (Slack and the CRM
+ * may differ in casing for the same address).
+ */
+export async function findTeamMemberByEmail(email: string): Promise<TeamMember | null> {
+  if (!email) return null;
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(teamMembers)
+    .where(and(
+      sql`LOWER(${teamMembers.correo}) = LOWER(${email})`,
+      eq(teamMembers.activo, 1),
+    ))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Recent contact attempts for a lead within the last N minutes — used to
+ * check idempotency before recording a "marked as contacted" event from
+ * Slack. If the operator double-clicks the button (or two operators click
+ * within the window), we skip the second insert.
+ */
+export async function getRecentContactAttempts(leadId: number, minutes: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - minutes * 60 * 1000);
+  return db.select().from(contactAttempts)
+    .where(and(
+      eq(contactAttempts.leadId, leadId),
+      gte(contactAttempts.timestamp, since),
+    ))
+    .limit(5);
+}
+
+/**
+ * Insert a new snooze record. Multiple snoozes per alertKey are allowed —
+ * `getActiveSnooze` returns the latest one with expiresAt > NOW().
+ */
+export async function createSlackSnooze(input: InsertSlackAlertSnooze): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(slackAlertSnoozes).values(input);
+}
+
+/**
+ * Returns the active snooze for an alertKey if one exists. The cron uses
+ * this to suppress alerts during the snooze window. We return the *latest*
+ * active row so a fresh snooze always wins over an older one.
+ */
+export async function getActiveSnooze(alertKey: string): Promise<SlackAlertSnooze | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const now = new Date();
+  const rows = await db.select().from(slackAlertSnoozes)
+    .where(and(
+      eq(slackAlertSnoozes.alertKey, alertKey),
+      gte(slackAlertSnoozes.expiresAt, now),
+    ))
+    .orderBy(desc(slackAlertSnoozes.expiresAt))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** List active snoozes for the admin Alertas UI. */
+export async function listActiveSnoozes(): Promise<SlackAlertSnooze[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  return db.select().from(slackAlertSnoozes)
+    .where(gte(slackAlertSnoozes.expiresAt, now))
+    .orderBy(desc(slackAlertSnoozes.expiresAt));
+}
+
+/** Force-expire a snooze (admin "Reactivar" button). */
+export async function expireSnooze(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(slackAlertSnoozes)
+    .set({ expiresAt: new Date(Date.now() - 1000) }) // 1 sec in the past
+    .where(eq(slackAlertSnoozes.id, id));
+}
+
+/** Audit log of every Slack button click. Inmutable — solo INSERT. */
+export async function createSlackActionLog(input: InsertSlackActionLog): Promise<void> {
+  const db = await getDb();
+  if (!db) return; // No DB → skip audit silently (better than throwing in handler).
+  await db.insert(slackActionsLog).values(input);
+}
+
+/** Recent Slack action history for the admin Alertas UI. */
+export async function listRecentSlackActions(limit = 50): Promise<SlackActionLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const n = Math.max(1, Math.min(limit, 200));
+  return db.select().from(slackActionsLog)
+    .orderBy(desc(slackActionsLog.createdAt))
+    .limit(n);
 }

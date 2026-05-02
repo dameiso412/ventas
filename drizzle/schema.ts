@@ -1122,3 +1122,55 @@ export const roundRobinAssignments = pgTable("round_robin_assignments", {
 
 export type RoundRobinAssignment = typeof roundRobinAssignments.$inferSelect;
 export type InsertRoundRobinAssignment = typeof roundRobinAssignments.$inferInsert;
+
+/**
+ * Slack interactivity tables.
+ *
+ * `slack_alert_snoozes` lets a setter silence a recurring alert (ej.
+ * "speed-to-lead") por un rato sin perderlo permanentemente — el cron
+ * consulta esta tabla antes de mandar y suprime si hay un row con
+ * expiresAt > NOW() para esa key.
+ *
+ * `slack_actions_log` es audit trail inmutable de cada button click
+ * recibido en /api/slack/interactive. Útil para debug y reportes.
+ */
+export const slackAlertSnoozes = pgTable("slack_alert_snoozes", {
+  id: serial("id").primaryKey(),
+  /** Match contra la key del dedup map en cron-kpi-monitor (ej. "speed-to-lead"). */
+  alertKey: varchar("alertKey", { length: 80 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  snoozedBySlackUserId: varchar("snoozedBySlackUserId", { length: 50 }),
+  snoozedByEmail: varchar("snoozedByEmail", { length: 320 }),
+  snoozedByName: varchar("snoozedByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  keyExpiresIdx: index("idx_slack_snoozes_key_expires").on(table.alertKey, table.expiresAt),
+}));
+
+export type SlackAlertSnooze = typeof slackAlertSnoozes.$inferSelect;
+export type InsertSlackAlertSnooze = typeof slackAlertSnoozes.$inferInsert;
+
+export const slackActionsLog = pgTable("slack_actions_log", {
+  id: serial("id").primaryKey(),
+  /** Format: "lead_contactado:1234" — action + target id. */
+  actionId: varchar("actionId", { length: 120 }).notNull(),
+  /** Type of CRM entity targeted (lead, follow_up, alert_key). Null for snoozes. */
+  targetType: varchar("targetType", { length: 40 }),
+  targetId: integer("targetId"),
+  slackUserId: varchar("slackUserId", { length: 50 }).notNull(),
+  slackUserName: varchar("slackUserName", { length: 255 }),
+  crmUserEmail: varchar("crmUserEmail", { length: 320 }),
+  crmUserName: varchar("crmUserName", { length: 255 }),
+  result: varchar("result", { length: 40 }).default("success").notNull(),
+  errorMessage: text("errorMessage"),
+  rawPayload: jsonb("rawPayload"),
+  processingTimeMs: integer("processingTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  actionIdIdx: index("idx_slack_actions_action_id").on(table.actionId),
+  targetIdx: index("idx_slack_actions_target").on(table.targetType, table.targetId),
+  createdAtIdx: index("idx_slack_actions_created").on(table.createdAt),
+}));
+
+export type SlackActionLog = typeof slackActionsLog.$inferSelect;
+export type InsertSlackActionLog = typeof slackActionsLog.$inferInsert;

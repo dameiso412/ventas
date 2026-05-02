@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { webhookRouter } from "../webhook";
 import { apiRouter } from "../api-v1";
 import { uploadRouter } from "../upload";
+import { slackRouter } from "../slack-interactive";
 import { startCronSync } from "../cron-meta-sync";
 import { startKpiMonitor } from "../cron-kpi-monitor";
 import { getDb, resetDb } from "../db";
@@ -48,11 +49,21 @@ async function startServer() {
     limit: "50mb",
     verify: (req: any, _res, buf) => { req.rawBody = buf; },
   }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express.urlencoded({
+    limit: "50mb",
+    extended: true,
+    // Preserve raw bytes on req.rawBody for HMAC verification by Slack
+    // interactivity endpoint (needs the exact form-urlencoded body to
+    // recompute the signature).
+    verify: (req: any, _res, buf) => { req.rawBody = buf; },
+  }));
   // Auth routes (Supabase Auth callback)
   registerAuthRoutes(app);
   // Webhook routes
   app.use(webhookRouter);
+  // Slack interactivity (button clicks → CRM mutations).
+  // Requires SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET. See docs/slack-app-setup.md.
+  app.use(slackRouter);
   // API v1 routes (external access with API Key auth)
   app.use(apiRouter);
   // File upload routes (call recordings)

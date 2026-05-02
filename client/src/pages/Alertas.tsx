@@ -1,7 +1,24 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Bell, AlertTriangle, Info, CheckCircle, XCircle, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Bell, AlertTriangle, Info, CheckCircle, XCircle, RefreshCw, BellOff, History } from "lucide-react";
+import { toast } from "sonner";
+
+function formatDateTime(d: string | Date): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleString("es-CL", { timeZone: "America/Santiago", dateStyle: "short", timeStyle: "short" });
+}
+
+function formatRelativeFuture(target: string | Date): string {
+  const date = typeof target === "string" ? new Date(target) : target;
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return "expirado";
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 60) return `en ${mins} min`;
+  const hours = Math.round(mins / 60);
+  return `en ${hours}h`;
+}
 
 const severityConfig = {
   critical: { icon: XCircle, color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30", label: "Crítico" },
@@ -11,8 +28,24 @@ const severityConfig = {
 };
 
 export default function Alertas() {
+  const utils = trpc.useUtils();
   const { data: alerts, isLoading, refetch } = trpc.alerts.list.useQuery(undefined, {
     refetchInterval: 60000, // Refresh every minute
+  });
+  const { data: snoozes = [] } = trpc.roundRobin.listActiveSnoozes.useQuery(undefined, {
+    refetchInterval: 30 * 1000,
+  });
+  const { data: recentActions = [] } = trpc.roundRobin.recentSlackActions.useQuery(
+    { limit: 25 },
+    { refetchInterval: 60 * 1000 }
+  );
+
+  const expireMutation = trpc.roundRobin.expireSnooze.useMutation({
+    onSuccess: () => {
+      toast.success("Snooze reactivado");
+      utils.roundRobin.listActiveSnoozes.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const criticalCount = (alerts || []).filter(a => a.severity === "critical").length;
@@ -120,6 +153,103 @@ export default function Alertas() {
             );
           })}
         </div>
+      )}
+
+      {/* SNOOZES ACTIVOS — alerts silenciados desde Slack */}
+      {snoozes.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <BellOff className="h-4 w-4 text-amber-400" />
+              Alertas silenciadas
+              <span className="text-xs text-muted-foreground font-normal">— se silenciaron desde Slack y se reactivan automáticamente al expirar</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/20">
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Alerta</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Silenciada por</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Vence</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snoozes.map((s) => (
+                    <tr key={s.id} className="border-b border-border/30">
+                      <td className="py-2 px-3"><code className="text-xs bg-muted/40 px-1.5 py-0.5 rounded">{s.alertKey}</code></td>
+                      <td className="py-2 px-3 text-muted-foreground">{s.snoozedByName || s.snoozedByEmail || "—"}</td>
+                      <td className="py-2 px-3 text-muted-foreground">
+                        {formatRelativeFuture(s.expiresAt)}
+                        <span className="text-[10px] text-muted-foreground/70 ml-2">({formatDateTime(s.expiresAt)})</span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => expireMutation.mutate({ id: s.id })}
+                          disabled={expireMutation.isPending}
+                        >
+                          Reactivar
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AUDIT LOG — últimas acciones desde Slack */}
+      {recentActions.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              Acciones recientes desde Slack
+              <span className="text-xs text-muted-foreground font-normal">— últimas {recentActions.length}</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/20">
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Cuándo</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Quién</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Acción</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Target</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Resultado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentActions.map((a) => (
+                    <tr key={a.id} className="border-b border-border/30">
+                      <td className="py-2 px-3 text-xs text-muted-foreground">{formatDateTime(a.createdAt)}</td>
+                      <td className="py-2 px-3">{a.crmUserName || a.slackUserName || "—"}</td>
+                      <td className="py-2 px-3"><code className="text-[11px] bg-muted/40 px-1.5 py-0.5 rounded">{a.actionId}</code></td>
+                      <td className="py-2 px-3 text-muted-foreground">
+                        {a.targetType ? `${a.targetType}${a.targetId ? ` #${a.targetId}` : ""}` : "—"}
+                      </td>
+                      <td className="py-2 px-3">
+                        <Badge variant="outline" className={
+                          a.result === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
+                          a.result === "unauthorized" ? "bg-amber-500/10 text-amber-400 border-amber-500/30" :
+                          "bg-red-500/10 text-red-400 border-red-500/30"
+                        }>
+                          {a.result}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

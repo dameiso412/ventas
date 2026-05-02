@@ -116,12 +116,25 @@ export interface AlertItem {
 
 /**
  * Top-level action button (one of up to 5 in the actions block at the
- * bottom of the alert). Use for "global" actions like "Abrir lista
- * completa" or "Ir al Round-Robin".
+ * bottom of the alert). Two variants:
+ *   - **Link button** — `url` set, opens the URL in browser. Works without
+ *     any Slack App setup.
+ *   - **Interactive button** — `actionId` set (no `url`), Slack POSTs to
+ *     /api/slack/interactive when clicked. Requires SLACK_BOT_TOKEN +
+ *     SLACK_SIGNING_SECRET (see docs/slack-app-setup.md). Without those
+ *     env vars set, interactive buttons are silently downgraded to
+ *     link buttons (when a fallback `url` is also provided) or omitted.
  */
 export interface AlertAction {
   label: string;
-  url: string;
+  /** Link button — clicking opens this URL. */
+  url?: string;
+  /** Interactive button — clicking POSTs to /api/slack/interactive with
+   *  this action_id. Format: "{accion}:{targetId}" or
+   *  "snooze:{alertKey}:{minutes}". */
+  actionId?: string;
+  /** Optional value sent alongside actionId (defaults to actionId itself). */
+  value?: string;
   style?: "primary" | "danger";
   /** Optional emoji prepended to the label (e.g. "🔗"). */
   emoji?: string;
@@ -202,12 +215,41 @@ function itemSection(item: AlertItem): object {
 }
 
 function actionsBlock(actions: AlertAction[]): object {
-  const elements: ButtonElement[] = actions.slice(0, MAX_ACTIONS).map((a) => ({
-    type: "button",
-    text: { type: "plain_text", text: a.emoji ? `${a.emoji} ${a.label}` : a.label },
-    url: a.url,
-    ...(a.style ? { style: a.style } : {}),
-  }));
+  const interactiveEnabled = ENV.slackBotToken.length > 0 && ENV.slackSigningSecret.length > 0;
+
+  const elements: ButtonElement[] = [];
+  for (const a of actions.slice(0, MAX_ACTIONS)) {
+    const labelText = a.emoji ? `${a.emoji} ${a.label}` : a.label;
+
+    // Decide button shape:
+    //   1. Has actionId AND interactive enabled → real interactive button.
+    //   2. Has actionId but interactive disabled AND has url → link button (fallback).
+    //   3. Has actionId, no url, no interactive → skip (would be a no-op).
+    //   4. Has only url → link button (current behavior).
+    if (a.actionId && interactiveEnabled) {
+      const btn: any = {
+        type: "button",
+        text: { type: "plain_text", text: labelText },
+        action_id: a.actionId,
+        value: a.value ?? a.actionId,
+        ...(a.style ? { style: a.style } : {}),
+      };
+      // Slack interactive buttons can ALSO have a URL — opens it AND fires
+      // the event. We don't use that pattern (would race with our handler).
+      elements.push(btn as ButtonElement);
+    } else if (a.url) {
+      elements.push({
+        type: "button",
+        text: { type: "plain_text", text: labelText },
+        url: a.url,
+        ...(a.style ? { style: a.style } : {}),
+      });
+    } else if (a.actionId) {
+      // Interactive button requested but no fallback URL and no Slack App
+      // setup — skip silently. Logged once per session for visibility.
+      console.warn(`[Slack] Skipping interactive button "${a.label}" — no SLACK_BOT_TOKEN/SIGNING_SECRET configured`);
+    }
+  }
   return { type: "actions", elements };
 }
 
